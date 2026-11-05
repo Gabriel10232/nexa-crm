@@ -8,8 +8,6 @@ import { roleOf } from '../../config/permissions';
 import { toast } from '../../store/ui';
 import { isEmail } from '../../lib/utils';
 
-const PALETTE = ['#06141B', '#11212D', '#253745', '#4A5C6A', '#9BA8AB', '#CCD0CF'];
-
 export default function Login() {
   const { session } = useSession();
   const nav = useNavigate(); const loc = useLocation();
@@ -54,11 +52,6 @@ export default function Login() {
         <div>
           <h1 className="rise">Vendas, clientes e indicadores em um só lugar.</h1>
           <p className="muted rise" style={{ marginTop: 14, maxWidth: 500, fontSize: 15, animationDelay: '80ms' }}>Pipeline visual, automações, Copilot e um workspace que você monta do seu jeito.</p>
-          <div className="auth-pills" aria-hidden>
-            {PALETTE.map((c, i) => (
-              <div key={c} className="auth-pill" style={{ background: c, color: i < 4 ? '#CCD0CF' : '#06141B', marginTop: i ? -22 : 0, zIndex: 10 + i, position: 'relative', animationDelay: `${150 + i * 70}ms` }}>{c}</div>
-            ))}
-          </div>
         </div>
         <p className="xs muted">Seus dados ficam salvos neste navegador até um banco de dados ser conectado.</p>
       </section>
