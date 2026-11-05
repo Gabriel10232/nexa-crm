@@ -470,11 +470,13 @@ table.table { width: 100%; border-collapse: separate; border-spacing: 0; font-si
 .widget .w-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex: none; }
 .widget .w-head h3 { font-size: 14px; }
 .dash-grid.editing { background-image: linear-gradient(to right, rgb(var(--accent-rgb) / .08) 1px, transparent 1px); background-size: calc((100% + var(--gap)) / 12) 100%; border-radius: var(--radius); outline: 1px dashed rgb(var(--accent-rgb) / .35); outline-offset: 8px; }
-.dash-grid.editing .widget { outline: 1px dashed rgb(var(--accent-rgb) / .55); outline-offset: -1px; cursor: grab; }
-.dash-grid.editing .widget.locked { outline-style: solid; outline-color: rgb(var(--warning-rgb) / .5); cursor: default; }
-.dash-grid.editing .widget.drop-target { outline: 2px solid var(--accent); box-shadow: 0 0 0 6px rgb(var(--accent-rgb) / .15); }
+.dash-grid.editing .widget { cursor: grab; }
+.dash-grid.editing .widget::after { content: ''; position: absolute; inset: 0; border-radius: inherit; border: 1px dashed rgb(var(--accent-rgb) / .6); pointer-events: none; z-index: 2; animation: fadeIn 200ms var(--e-out) both; }
+.dash-grid.editing .widget.locked { cursor: default; }
+.dash-grid.editing .widget.locked::after { border-style: solid; border-color: rgb(var(--warning-rgb) / .55); }
+.dash-grid.editing .widget.drop-target::after { border: 2px solid var(--accent); box-shadow: 0 0 0 6px rgb(var(--accent-rgb) / .15); animation: dropPulse 900ms var(--e-inout) infinite; }
 .dash-grid.editing .widget.dragging { opacity: .35; }
-.dash-grid.editing .widget.section { outline: 1px dashed rgb(var(--accent-rgb) / .55); padding: 10px 14px; }
+.dash-grid.editing .widget.section { padding: 10px 14px; }
 .w-tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 3; padding: 3px; border-radius: 99px; background: rgb(var(--card-rgb) / .95); border: 1px solid var(--line-strong); box-shadow: 0 6px 18px -8px rgb(0 0 0 / .5); }
 .w-tools .btn { --h: 26px; }
 .w-tools, .w-size { opacity: 0; transition: opacity var(--dur) var(--ease); }
@@ -796,12 +798,10 @@ tr.fresh > td { animation: freshFlash 2.4s var(--e-out); }
 /* Dashboard */
 .dash-grid .widget { animation: widgetIn 460ms var(--e-out) both; animation-delay: calc(var(--i, 0) * 35ms); }
 @keyframes widgetIn { from { opacity: 0; transform: translateY(14px) scale(.985); } }
-.dash-grid.editing .widget { transition: outline-color 200ms, box-shadow 200ms, opacity 200ms; }
+.dash-grid.editing .widget { transition: opacity 200ms, transform 200ms var(--e-out); }
 .dash-grid.editing .widget.dragging { transform: scale(.98); }
-.dash-grid.editing .widget.drop-target { animation: dropPulse 900ms var(--e-inout) infinite; }
-@keyframes dropPulse { 50% { box-shadow: 0 0 0 9px rgb(var(--accent-rgb) / .1); } }
+@keyframes dropPulse { 50% { opacity: .45; } }
 .editbar { animation: rise 280ms var(--e-spring) both; }
-.dash-grid.editing { transition: outline-color 300ms; }
 
 /* Kanban */
 .kcol { transition: background 200ms, border-color 200ms, transform 200ms var(--e-out); }

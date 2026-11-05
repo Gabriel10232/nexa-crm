@@ -11,6 +11,8 @@ import { animateTheme } from '../lib/motion';
 import { store } from '../store/store';
 import { withDemo } from './helpers';
 import type { TenantData } from '../types';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 beforeEach(() => store.reset());
 
@@ -42,6 +44,20 @@ describe('Theme switch does no React work while the reveal animates', () => {
     const css = vi.fn(), commit = vi.fn();
     animateTheme({ clientX: 0, clientY: 0 }, css, commit);
     expect(css).toHaveBeenCalled(); expect(commit).toHaveBeenCalled();
+  });
+});
+
+describe('Edit mode only animates compositor-friendly properties', () => {
+  const css = readFileSync(resolve(__dirname, '../styles/app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const blocks = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map(m => ({ sel: m[1], body: m[2] }));
+  it('no outline/box-shadow transitions on the widget grid (repaints every widget each frame)', () => {
+    const bad = blocks.filter(b => /\.dash-grid\.editing/.test(b.sel) && /transition[^;]*(outline|box-shadow)/.test(b.body));
+    expect(bad.map(b => b.sel.trim())).toEqual([]);
+  });
+  it('the edit-mode frame is a pseudo-element that fades in with opacity', () => {
+    const frame = blocks.find(b => /\.dash-grid\.editing \.widget::after/.test(b.sel));
+    expect(frame?.body).toMatch(/pointer-events:\s*none/);
+    expect(frame?.body).toMatch(/animation:\s*fadeIn/);
   });
 });
 

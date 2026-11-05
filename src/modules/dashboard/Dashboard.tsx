@@ -85,14 +85,14 @@ export default function Dashboard() {
 
   const change = (fn: (ws: Widget[]) => Widget[], track = true) => {
     setDraft(cur => {
-      const next = fn(deepClone(cur));
+      const next = fn([...cur]); // shallow: untouched widgets keep identity (memo skips them)
       if (track) { hist.current.past.push(cur); hist.current.future = []; }
       if (autosave) queueMicrotask(() => commitLayout(next, true));
       return next;
     });
     force(x => x + 1);
   };
-  const startEdit = () => { if (!layout) return; setDraft(deepClone(layout.widgets)); hist.current = { past: [], future: [] }; setEditing(true); };
+  const startEdit = () => { if (!layout) return; setDraft([...layout.widgets]); hist.current = { past: [], future: [] }; setEditing(true); };
   const undo = () => { const p = hist.current.past.pop(); if (p) { hist.current.future.push(draft); setDraft(p); if (autosave) commitLayout(p, true); force(x => x + 1); } };
   const redo = () => { const n = hist.current.future.pop(); if (n) { hist.current.past.push(draft); setDraft(n); if (autosave) commitLayout(n, true); force(x => x + 1); } };
   const save = () => { commitLayout(draft); setEditing(false); };
