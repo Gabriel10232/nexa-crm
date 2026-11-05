@@ -399,12 +399,14 @@ export function generateTenant(opt: SeedOptions): TenantData {
   };
 }
 
+/** A completely empty organization: configuration only, no records and no users. */
 export function blankTenant(orgName: string, template: string): TenantData {
-  const t = generateTenant({ orgName, seed: 7, template, scale: 0.3, segment: 'Serviços' });
-  const keepUsers = t.users.slice(0, 1);
+  const t = generateTenant({ orgName: orgName || 'Minha empresa', seed: 7, template, scale: 0.3, segment: '' });
   return {
-    ...t, users: keepUsers, leads: [], people: [], companies: [], deals: [], activities: [], tasks: [], events: [], conversations: [], proposals: [],
-    automationRuns: [], audit: [], notifications: [], sessions: [], goals: [], quickNotes: '',
-    org: { ...t.org, onboarded: false, checklist: { company: false, pipeline: false, users: false, import: false, automation: false, integrations: false } },
+    ...t, users: [], teams: [{ id: 'team_main', name: 'Comercial', department: 'Comercial' }],
+    tags: [], customFields: [], leads: [], people: [], companies: [], deals: [], activities: [], tasks: [], events: [], conversations: [], proposals: [],
+    automations: [], automationRuns: [], audit: [], notifications: [], sessions: [], goals: [], savedFilters: [], quickNotes: '', dismissedDuplicates: [],
+    pipelines: [buildPipeline('pipe_main', 'Vendas', template)],
+    org: { ...t.org, name: orgName, segment: '', objective: '', usersEstimate: '1-10', onboarded: false, checklist: { company: false, pipeline: false, users: false, import: false, automation: false, integrations: false } },
   };
 }

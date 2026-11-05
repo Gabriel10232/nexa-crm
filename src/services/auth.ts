@@ -1,7 +1,7 @@
 /* AuthService (simulated).
  * Contract mirrors what a real provider (Auth0, Clerk, Supabase Auth, Cognito) exposes:
  * signIn, signOut, current session, switch organization. Replace the internals only. */
-import { store, currentTenant } from '../store/store';
+import { store, currentTenant, demoTenants } from '../store/store';
 import type { Action, Resource } from '../types';
 import { can as roleCan, canAccess as roleCanAccess } from '../config/permissions';
 import { useStore } from '../store/store';
@@ -9,6 +9,13 @@ import { blankTenant } from '../data/seed';
 import { normalize, sleep, uid } from '../lib/utils';
 
 export const DEMO_PASSWORD = 'demo123';
+
+export async function hashPassword(p: string) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`nexa:${p}`));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export const hasAccounts = () => store.get().tenants.some(t => t.data.users.length > 0);
 
 export async function signIn(email: string, password: string): Promise<{ ok: true } | { ok: false; error: string }> {
   await sleep(450); // network latency simulation
@@ -18,12 +25,31 @@ export async function signIn(email: string, password: string): Promise<{ ok: tru
     const u = t.data.users.find(x => normalize(x.email) === e);
     if (u) {
       if (!u.active) return { ok: false, error: 'Usuário desativado. Fale com o administrador da conta.' };
-      if (password !== DEMO_PASSWORD) return { ok: false, error: 'Senha incorreta. No ambiente de demonstração a senha é demo123.' };
+      const ok = u.passwordHash ? u.passwordHash === await hashPassword(password) : password === DEMO_PASSWORD;
+      if (!ok) return { ok: false, error: 'Senha incorreta.' };
       startSession(t.id, u.id);
       return { ok: true };
     }
   }
   return { ok: false, error: 'Não encontramos uma conta com esse e-mail.' };
+}
+
+/** First access: creates the owner account in the empty organization. */
+export async function signUp(name: string, email: string, password: string) {
+  const passwordHash = await hashPassword(password);
+  const s = store.get();
+  const t = s.tenants.find(x => x.data.users.length === 0) ?? s.tenants[0];
+  const user = { id: uid('u'), name: name.trim(), email: email.trim().toLowerCase(), role: 'owner' as const, teamId: t.data.teams[0]?.id ?? 'team_main', active: true, lastAccessAt: new Date().toISOString(), color: '#7FA7B5', title: 'Proprietário', passwordHash };
+  store.set({ ...s, tenants: s.tenants.map(x => (x.id === t.id ? { ...x, data: { ...x.data, users: [...x.data.users, user] } } : x)) });
+  startSession(t.id, user.id);
+}
+
+/** Optional: adds the fictitious demo organizations and enters as the demo owner. */
+export function enterDemo() {
+  const s = store.get();
+  const demos = demoTenants().filter(d => !s.tenants.some(t => t.id === d.id));
+  store.set({ ...s, tenants: [...s.tenants, ...demos] });
+  startSession('org_aurora', 'u_marina');
 }
 
 export function startSession(tenantId: string, userId: string) {

@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 
-export interface Toast { id: number; kind: 'success' | 'error' | 'info' | 'warning'; title: string; body?: string; action?: { label: string; run: () => void } }
+export interface Toast { id: number; kind: 'success' | 'error' | 'info' | 'warning'; title: string; body?: string; action?: { label: string; run: () => void }; leaving?: boolean }
 export interface ConfirmReq {
   id: number;
   title: string;
@@ -27,7 +27,20 @@ export const toast = (kind: Toast['kind'], title: string, body?: string, action?
   set({ toasts: [...ui.toasts, t].slice(-4) });
   setTimeout(() => dismissToast(t.id), action ? 6500 : 4200);
 };
-export const dismissToast = (id: number) => set({ toasts: ui.toasts.filter(t => t.id !== id) });
+export const dismissToast = (id: number) => {
+  if (!ui.toasts.some(t => t.id === id && !t.leaving)) return;
+  set({ toasts: ui.toasts.map(t => (t.id === id ? { ...t, leaving: true } : t)) });
+  setTimeout(() => set({ toasts: ui.toasts.filter(t => t.id !== id) }), 200);
+};
+
+/* Recently created records get a short highlight when they appear in lists. */
+let fresh = new Set<string>();
+const freshLs = new Set<() => void>();
+export const markNew = (id: string) => {
+  fresh = new Set(fresh).add(id); freshLs.forEach(l => l());
+  setTimeout(() => { fresh = new Set(fresh); fresh.delete(id); freshLs.forEach(l => l()); }, 2600);
+};
+export const useFresh = () => useSyncExternalStore(cb => { freshLs.add(cb); return () => freshLs.delete(cb); }, () => fresh);
 
 export const confirm = (o: Omit<ConfirmReq, 'id' | 'resolve'>) =>
   new Promise<boolean>(resolve => set({ confirm: { ...o, id: ++n, resolve: ok => { set({ confirm: null }); resolve(ok); } } }));

@@ -1,7 +1,7 @@
 import { useSyncExternalStore, useRef, useCallback } from 'react';
 import type { Tenant, TenantData } from '../types';
 import { activeAdapter } from '../services/storage';
-import { generateTenant } from '../data/seed';
+import { generateTenant, blankTenant } from '../data/seed';
 import { DEFAULT_APPEARANCE } from '../config/appearance';
 
 export interface SessionState { userId: string; tenantId: string; realUserId: string; startedAt: string; }
@@ -13,18 +13,27 @@ export interface AppState {
 }
 
 const KEY = 'nexa-crm:state';
-const VERSION = 5;
+const VERSION = 6;
 
+/** Production default: one empty organization, no users. The first visitor creates the owner account. */
 function initialState(): AppState {
-  return {
-    version: VERSION,
-    tenants: [
-      { id: 'org_aurora', name: 'Aurora Tecnologia', data: generateTenant({ orgName: 'Aurora Tecnologia', seed: 42, template: 'b2b', scale: 1, segment: 'Tecnologia' }) },
-      { id: 'org_vertice', name: 'Vértice Imóveis', data: generateTenant({ orgName: 'Vértice Imóveis', seed: 99, template: 'imobiliaria', scale: 0.5, segment: 'Imobiliário' }) },
-    ],
-    session: null,
-  };
+  return { version: VERSION, tenants: [{ id: 'org_main', name: '', data: blankTenant('', 'b2b') }], session: null };
 }
+
+export function demoTenants() {
+  return [
+    { id: 'org_aurora', name: 'Aurora Tecnologia (demo)', data: generateTenant({ orgName: 'Aurora Tecnologia (demo)', seed: 42, template: 'b2b', scale: 1, segment: 'Tecnologia' }) },
+    { id: 'org_vertice', name: 'Vértice Imóveis (demo)', data: generateTenant({ orgName: 'Vértice Imóveis (demo)', seed: 99, template: 'imobiliaria', scale: 0.5, segment: 'Imobiliário' }) },
+  ];
+}
+
+/* ---------- Save status (drives the "Salvando… / Salvo" indicator) ---------- */
+type SaveStatus = 'idle' | 'saving' | 'saved';
+let saveStatus: SaveStatus = 'idle';
+const saveListeners = new Set<() => void>();
+let savedTimer: number | undefined;
+function setSave(s: SaveStatus) { saveStatus = s; saveListeners.forEach(l => l()); }
+export const useSaveStatus = () => useSyncExternalStore(cb => { saveListeners.add(cb); return () => saveListeners.delete(cb); }, () => saveStatus);
 
 function load(): AppState {
   const saved = activeAdapter.load<AppState>(KEY);
@@ -43,8 +52,13 @@ const listeners = new Set<() => void>();
 let saveTimer: number | undefined;
 
 function persist() {
-  window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => activeAdapter.save(KEY, state), 250);
+  window.clearTimeout(saveTimer); window.clearTimeout(savedTimer);
+  setSave('saving');
+  saveTimer = window.setTimeout(() => {
+    activeAdapter.save(KEY, state);
+    setSave('saved');
+    savedTimer = window.setTimeout(() => setSave('idle'), 1600);
+  }, 350);
 }
 
 export const store = {

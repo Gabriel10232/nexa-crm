@@ -5,8 +5,15 @@ CRM SaaS multiempresa, plug and play, com design **liquid glass** sobre a paleta
 
 **Demo:** https://gabriel10232.github.io/nexa-crm/
 
-> Ambiente de demonstração: dados 100% fictícios (e-mails no domínio reservado `.example`).
-> Use o acesso rápido por perfil na tela de login ou qualquer e-mail de usuário demo com a senha `demo123`.
+> O sistema começa **vazio**: no primeiro acesso você cria a conta de proprietário e configura a empresa.
+> Opcionalmente, "Explorar uma demonstração" (login) ou Configurações → Privacidade adiciona organizações fictícias (senha dos perfis demo: `demo123`).
+> "Apagar todos os dados" volta ao primeiro acesso.
+
+### Animações
+Sistema de movimento com durações padronizadas (micro 120–200ms, menus ~210ms, modais ~280ms, páginas ~320ms, gráficos ~720ms, contadores ~650ms),
+saída animada de menus/modais/toasts, gráficos desenhados progressivamente, números com contagem, troca de tema com revelação circular (View Transitions),
+animação de layout (FLIP) ao reorganizar o dashboard e indicador "Salvando… / Salvo".
+Com "reduzir movimento" (sistema ou Personalizar aparência → Animações) só fades e cores são mantidos.
 
 ## O que tem
 

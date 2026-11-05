@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutGrid, Palette, Plus, Undo2, Redo2, RotateCcw, Save, X, Settings2, Copy, Lock, Unlock, EyeOff, Eye, Trash2,
   Download, ChevronDown, Check, Star, Pencil, Users, ChevronLeft, ChevronRight, Printer, GripVertical,
@@ -11,7 +11,7 @@ import { computeKpis, Filters, PERIOD_LABEL } from '../../services/metrics';
 import { KPI_METRICS, defaultDashboards, defaultExecutiveWidgets } from '../../config/widgets';
 import { ROLES } from '../../config/permissions';
 import { PageHeader } from '../../components/common';
-import { Badge, Button, Menu, Modal, Field, Input, Select, Switch, Seg, Notice, Skeleton, useLoading } from '../../components/ui';
+import { Badge, Button, Menu, Modal, Field, Input, Select, Switch, Seg, Notice, Skeleton, useLoading, reducedMotion } from '../../components/ui';
 import { WidgetBody, WidgetConfigModal, AddWidgetModal, WCtx } from './widgets';
 import { confirm, prompt, toast } from '../../store/ui';
 import { clamp, cx, deepClone, download, toCSV, uid } from '../../lib/utils';
@@ -122,6 +122,21 @@ export default function Dashboard() {
   /* ---------- Resize by pointer ---------- */
   const gridRef = useRef<HTMLDivElement>(null);
   const resizing = useRef(false);
+  /* FLIP layout animation: widgets that change position glide to their new place instead of jumping. */
+  const rects = useRef(new Map<string, { x: number; y: number }>());
+  useLayoutEffect(() => {
+    const grid = gridRef.current; if (!grid) { rects.current.clear(); return; }
+    const next = new Map<string, { x: number; y: number }>();
+    grid.querySelectorAll<HTMLElement>('[data-wid]').forEach(el => {
+      const id = el.dataset.wid!; const pos = { x: el.offsetLeft, y: el.offsetTop }; next.set(id, pos);
+      const prev = rects.current.get(id);
+      if (prev && !resizing.current && !reducedMotion()) {
+        const dx = prev.x - pos.x, dy = prev.y - pos.y;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 340, easing: 'cubic-bezier(.2,.9,.25,1.04)' });
+      }
+    });
+    rects.current = next;
+  });
   const resizeStart = (e: React.PointerEvent, w: Widget, axis: 'x' | 'y' | 'xy') => {
     e.preventDefault(); e.stopPropagation();
     resizing.current = true;
@@ -230,10 +245,10 @@ export default function Dashboard() {
             const span = spanFor(w.w, cols);
             const hiddenAll = !w.visible.desktop && !w.visible.tablet && !w.visible.mobile;
             return (
-              <section key={w.id} aria-label={w.title}
+              <section key={w.id} aria-label={w.title} data-wid={w.id}
                 className={cx('card widget', w.type === 'section' && 'section', w.type === 'kpi' && 'kpi-w', w.locked && 'locked', dragId === w.id && 'dragging', overId === w.id && dragId !== w.id && 'drop-target',
                   !editing && !w.visible.desktop && 'hide-desktop', !editing && !w.visible.tablet && 'hide-tablet', !editing && !w.visible.mobile && 'hide-mobile')}
-                style={{ gridColumn: cols === 1 ? undefined : `span ${span}`, gridRow: cols === 1 ? undefined : `span ${w.h}`, '--h': w.h, opacity: editing && hiddenAll ? .45 : undefined } as React.CSSProperties}
+                style={{ gridColumn: cols === 1 ? undefined : `span ${span}`, gridRow: cols === 1 ? undefined : `span ${w.h}`, '--h': w.h, '--i': Math.min(idx, 14), opacity: editing && hiddenAll ? .45 : undefined } as React.CSSProperties}
                 draggable={editing && !w.locked}
                 onDragStart={e => { if (resizing.current || (e.target as HTMLElement).closest?.('.resize-e,.resize-s,.resize-se,.w-tools')) { e.preventDefault(); return; } setDragId(w.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', w.id); }}
                 onDragEnd={() => { setDragId(null); setOverId(null); }}

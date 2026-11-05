@@ -9,30 +9,65 @@ import { setLocale } from './lib/utils';
 import { Toaster, ConfirmHost, PromptHost, SkeletonRows, Empty, Button } from './components/ui';
 import type { Resource } from './types';
 
-const Login = lazy(() => import('./modules/auth/Login'));
-const Onboarding = lazy(() => import('./modules/auth/Onboarding'));
-const Dashboard = lazy(() => import('./modules/dashboard/Dashboard'));
-const Leads = lazy(() => import('./modules/leads/Leads'));
-const LeadDetail = lazy(() => import('./modules/leads/LeadDetail'));
-const People = lazy(() => import('./modules/contacts/People'));
-const PersonDetail = lazy(() => import('./modules/contacts/PersonDetail'));
-const Companies = lazy(() => import('./modules/contacts/Companies'));
-const CompanyDetail = lazy(() => import('./modules/contacts/CompanyDetail'));
-const Opportunities = lazy(() => import('./modules/deals/Opportunities'));
-const DealDetail = lazy(() => import('./modules/deals/DealDetail'));
-const Pipeline = lazy(() => import('./modules/deals/Pipeline'));
-const Tasks = lazy(() => import('./modules/activities/Tasks'));
-const Agenda = lazy(() => import('./modules/activities/Agenda'));
-const InboxPage = lazy(() => import('./modules/inbox/Inbox'));
-const Proposals = lazy(() => import('./modules/proposals/Proposals'));
-const ProposalEditor = lazy(() => import('./modules/proposals/ProposalEditor'));
-const Automations = lazy(() => import('./modules/automations/Automations'));
-const Reports = lazy(() => import('./modules/reports/Reports'));
-const Goals = lazy(() => import('./modules/goals/Goals'));
-const Team = lazy(() => import('./modules/team/Team'));
-const Settings = lazy(() => import('./modules/settings/Settings'));
-const ArchivePage = lazy(() => import('./modules/settings/Archive'));
-const CopilotPage = lazy(() => import('./modules/copilot/Copilot'));
+
+const loaders = {
+  Login: () => import('./modules/auth/Login'),
+  Onboarding: () => import('./modules/auth/Onboarding'),
+  Dashboard: () => import('./modules/dashboard/Dashboard'),
+  Leads: () => import('./modules/leads/Leads'),
+  LeadDetail: () => import('./modules/leads/LeadDetail'),
+  People: () => import('./modules/contacts/People'),
+  PersonDetail: () => import('./modules/contacts/PersonDetail'),
+  Companies: () => import('./modules/contacts/Companies'),
+  CompanyDetail: () => import('./modules/contacts/CompanyDetail'),
+  Opportunities: () => import('./modules/deals/Opportunities'),
+  DealDetail: () => import('./modules/deals/DealDetail'),
+  Pipeline: () => import('./modules/deals/Pipeline'),
+  Tasks: () => import('./modules/activities/Tasks'),
+  Agenda: () => import('./modules/activities/Agenda'),
+  InboxPage: () => import('./modules/inbox/Inbox'),
+  Proposals: () => import('./modules/proposals/Proposals'),
+  ProposalEditor: () => import('./modules/proposals/ProposalEditor'),
+  Automations: () => import('./modules/automations/Automations'),
+  Reports: () => import('./modules/reports/Reports'),
+  Goals: () => import('./modules/goals/Goals'),
+  Team: () => import('./modules/team/Team'),
+  Settings: () => import('./modules/settings/Settings'),
+  ArchivePage: () => import('./modules/settings/Archive'),
+  CopilotPage: () => import('./modules/copilot/Copilot'),
+};
+const Login = lazy(loaders.Login);
+const Onboarding = lazy(loaders.Onboarding);
+const Dashboard = lazy(loaders.Dashboard);
+const Leads = lazy(loaders.Leads);
+const LeadDetail = lazy(loaders.LeadDetail);
+const People = lazy(loaders.People);
+const PersonDetail = lazy(loaders.PersonDetail);
+const Companies = lazy(loaders.Companies);
+const CompanyDetail = lazy(loaders.CompanyDetail);
+const Opportunities = lazy(loaders.Opportunities);
+const DealDetail = lazy(loaders.DealDetail);
+const Pipeline = lazy(loaders.Pipeline);
+const Tasks = lazy(loaders.Tasks);
+const Agenda = lazy(loaders.Agenda);
+const InboxPage = lazy(loaders.InboxPage);
+const Proposals = lazy(loaders.Proposals);
+const ProposalEditor = lazy(loaders.ProposalEditor);
+const Automations = lazy(loaders.Automations);
+const Reports = lazy(loaders.Reports);
+const Goals = lazy(loaders.Goals);
+const Team = lazy(loaders.Team);
+const Settings = lazy(loaders.Settings);
+const ArchivePage = lazy(loaders.ArchivePage);
+const CopilotPage = lazy(loaders.CopilotPage);
+
+/** Warm every route chunk in the background so the first navigation is instant (no fallback flash). */
+export function prefetchRoutes() {
+  const run = () => Object.values(loaders).forEach(l => l().catch(() => {}));
+  const w = window as Window & { requestIdleCallback?: (cb: () => void) => void };
+  w.requestIdleCallback ? w.requestIdleCallback(run) : setTimeout(run, 400);
+}
+prefetchRoutes();
 
 function ThemeSync() {
   const d = useTenant();
@@ -64,7 +99,8 @@ function Guard({ res, children }: { res: Resource; children: React.ReactNode }) 
   return <>{children}</>;
 }
 
-const Fallback = () => <div className="card" style={{ margin: 8 }}><SkeletonRows n={7} /></div>;
+export const Fallback = () => <div className="page-fallback" aria-busy="true" aria-label="Carregando"><div className="skel" style={{ height: 30, width: 260, borderRadius: 10 }} /><div className="skel" style={{ height: 14, width: 380, borderRadius: 8 }} /><div className="card"><SkeletonRows n={6} /></div></div>;
+const BootFallback = () => <div className="boot" aria-busy="true"><div className="brand-mark">N</div></div>;
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error?: Error }> {
   state: { error?: Error } = {};
@@ -86,12 +122,12 @@ export default function App() {
     <HashRouter>
       <ThemeSync />
       <ErrorBoundary>
-        <Suspense fallback={<Fallback />}>
+        <Suspense fallback={<BootFallback />}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/onboarding" element={<RequireAuth><Onboarding /></RequireAuth>} />
             <Route element={<RequireAuth><Shell /></RequireAuth>}>
-              <Route index element={<Suspense fallback={<Fallback />}>{g('dashboard', <Dashboard />)}</Suspense>} />
+              <Route index element={g('dashboard', <Dashboard />)} />
               <Route path="inbox" element={g('inbox', <InboxPage />)} />
               <Route path="copilot" element={<CopilotPage />} />
               <Route path="leads" element={g('leads', <Leads />)} />

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { Tone } from '../config/labels';
 import { cx, initials } from '../lib/utils';
-import { useUI, dismissToast, ConfirmReq } from '../store/ui';
+import { useUI, dismissToast, ConfirmReq, useFresh } from '../store/ui';
 
 /* ---------- Icons by name (tree-shaken map) ---------- */
 const ICONS: Record<string, LucideIcon> = {
@@ -69,18 +69,48 @@ export function Select({ options, placeholder, ...p }: React.SelectHTMLAttribute
 export const Switch = ({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) =>
   <button type="button" role="switch" aria-checked={checked} aria-label={label} className="switch" onClick={() => onChange(!checked)} />;
 
+/** Keeps a sliding indicator (CSS vars --ix / --iw) under the active child. */
+function useInk(ref: React.RefObject<HTMLElement>, selector: string, deps: unknown[]) {
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el) return;
+    const update = () => {
+      const a = el.querySelector<HTMLElement>(selector); if (!a) { el.style.setProperty('--iw', '0px'); return; }
+      el.style.setProperty('--ix', `${a.offsetLeft}px`); el.style.setProperty('--iw', `${a.offsetWidth}px`);
+      if (!el.dataset.inkReady) requestAnimationFrame(() => { el.dataset.inkReady = '1'; });
+    };
+    update();
+    const ro = new ResizeObserver(update); ro.observe(el);
+    return () => ro.disconnect();
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 export function Seg<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: { value: T; label: React.ReactNode; icon?: React.ReactNode }[]; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useInk(ref, 'button[aria-pressed="true"]', [value, options.length]);
   return (
-    <div className="pill-seg" role="group" aria-label={label}>
+    <div ref={ref} className="pill-seg inked" role="group" aria-label={label}>
+      <span className="seg-ink" aria-hidden />
       {options.map(o => <button type="button" key={o.value} aria-pressed={value === o.value} onClick={() => onChange(o.value)}>{o.icon}{o.label}</button>)}
     </div>
   );
 }
 
 export function Tabs<T extends string>({ value, onChange, tabs }: { value: T; onChange: (v: T) => void; tabs: { value: T; label: React.ReactNode; count?: number }[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useInk(ref, '[aria-selected="true"]', [value, tabs.length]);
+  const change = (v: T) => {
+    if (v === value) return;
+    onChange(v);
+    // Fade the panel that follows the tab bar so the content swap reads as a transition.
+    requestAnimationFrame(() => {
+      const panel = ref.current?.nextElementSibling as HTMLElement | null;
+      if (panel) panel.animate(reducedMotion() ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    });
+  };
   return (
-    <div className="tabs" role="tablist">
-      {tabs.map(t => <button key={t.value} role="tab" aria-selected={value === t.value} onClick={() => onChange(t.value)}>{t.label}{t.count !== undefined && <span className="n">{t.count}</span>}</button>)}
+    <div ref={ref} className="tabs" role="tablist">
+      {tabs.map(t => <button key={t.value} role="tab" aria-selected={value === t.value} onClick={() => change(t.value)}>{t.label}{t.count !== undefined && <span className="n">{t.count}</span>}</button>)}
+      <span className="tab-ink" aria-hidden />
     </div>
   );
 }
@@ -104,6 +134,54 @@ export function useLoading(ms = 380) {
   const [loading, setLoading] = useState(true);
   useEffect(() => { const t = setTimeout(() => setLoading(false), ms); return () => clearTimeout(t); }, [ms]);
   return loading;
+}
+
+/* ---------- Motion helpers ---------- */
+export const reducedMotion = () => document.documentElement.dataset.motion === 'reduce';
+
+/** Gives any element an exit animation: on unmount/close a visual clone plays `.ghost-leave` and removes itself. */
+export function useExitGhost(ref: React.RefObject<HTMLElement>, active: boolean) {
+  const last = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => { if (active && ref.current) last.current = ref.current; });
+  useLayoutEffect(() => {
+    if (!active) return;
+    return () => {
+      const el = last.current; if (!el) return;
+      const g = el.cloneNode(true) as HTMLElement;
+      g.classList.add('ghost-leave'); g.setAttribute('aria-hidden', 'true'); g.removeAttribute('id'); g.style.pointerEvents = 'none';
+      g.querySelectorAll('[id]').forEach(n => n.removeAttribute('id'));
+      document.body.appendChild(g);
+      const done = () => g.remove();
+      g.addEventListener('animationend', e => { if (e.target === g) done(); });
+      setTimeout(done, 450);
+    };
+  }, [active]);
+}
+
+let bodyLocks = 0;
+function useBodyLock() {
+  useEffect(() => {
+    if (bodyLocks++ === 0) { const sw = window.innerWidth - document.documentElement.clientWidth; document.body.style.overflow = 'hidden'; document.body.style.paddingRight = sw ? `${sw}px` : ''; }
+    return () => { if (--bodyLocks === 0) { document.body.style.overflow = ''; document.body.style.paddingRight = ''; } };
+  }, []);
+}
+
+/** Animated number (count-up) — 600ms ease-out, respects reduced motion. */
+export function CountUp({ value, format, duration = 650 }: { value: number; format: (n: number) => string; duration?: number }) {
+  const [shown, setShown] = useState(reducedMotion() ? value : 0);
+  const from = useRef(reducedMotion() ? value : 0);
+  useEffect(() => {
+    if (reducedMotion() || !isFinite(value)) { setShown(value); from.current = value; return; }
+    const start = performance.now(); const a = from.current; let raf = 0;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / duration); const e = 1 - Math.pow(1 - p, 3);
+      setShown(a + (value - a) * e);
+      if (p < 1) raf = requestAnimationFrame(tick); else from.current = value;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(raf); from.current = value; };
+  }, [value, duration]);
+  return <span className="num">{format(shown)}</span>;
 }
 
 /* ---------- Modal & drawer ---------- */
@@ -134,15 +212,16 @@ export function Modal({ open, onClose, title, description, children, footer, siz
 }
 function ModalInner({ onClose, title, description, children, footer, size, drawer, className }: { onClose: () => void; title: React.ReactNode; description?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode; size?: 'lg' | 'xl'; drawer?: boolean; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  useEsc(onClose); useFocusTrap(ref);
+  const overlay = useRef<HTMLDivElement>(null);
+  useEsc(onClose); useFocusTrap(ref); useBodyLock(); useExitGhost(overlay, true);
   return (
-    <div className={cx('overlay', drawer && 'drawer-overlay', className)} onMouseDown={e => e.target === e.currentTarget && onClose()}>
+    <div ref={overlay} className={cx('overlay', drawer && 'drawer-overlay', className)} onMouseDown={e => e.target === e.currentTarget && onClose()}>
       <div ref={ref} className={cx('modal', size, drawer && 'drawer')} role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} tabIndex={-1}>
         <div className="modal-head">
           <div className="flex1"><h2>{title}</h2>{description && <p>{description}</p>}</div>
           <Button variant="ghost" icon size="sm" onClick={onClose} aria-label="Fechar" className="modal-x"><X /></Button>
         </div>
-        <div className="modal-body" style={drawer ? { flex: 1 } : undefined}>{children}</div>
+        <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
     </div>
@@ -165,16 +244,20 @@ export function Menu({ trigger, children, align = 'right', width }: { trigger: (
     if (!open) return;
     const h = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.menu') && !wrap.current?.contains(e.target as Node)) setOpen(false); };
     const k = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    const s = () => setOpen(false);
-    document.addEventListener('mousedown', h); document.addEventListener('keydown', k); window.addEventListener('scroll', s, true);
-    return () => { document.removeEventListener('mousedown', h); document.removeEventListener('keydown', k); window.removeEventListener('scroll', s, true); };
+    // Close only when the page behind scrolls — never when the menu's own list scrolls.
+    const s = (e: Event) => { const t = e.target; if (menuRef.current && t instanceof Node && (menuRef.current === t || menuRef.current.contains(t))) return; setOpen(false); };
+    const r = () => setOpen(false);
+    document.addEventListener('mousedown', h); document.addEventListener('keydown', k); window.addEventListener('scroll', s, true); window.addEventListener('resize', r);
+    return () => { document.removeEventListener('mousedown', h); document.removeEventListener('keydown', k); window.removeEventListener('scroll', s, true); window.removeEventListener('resize', r); };
   }, [open]);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useExitGhost(menuRef, open && !!pos);
   const close = () => setOpen(false);
   return (
     <span ref={wrap} style={{ display: 'inline-flex' }}>
       {trigger({ onClick: () => setOpen(o => !o), 'aria-expanded': open, 'aria-haspopup': 'menu' })}
       {open && pos && createPortal(
-        <div className="menu" role="menu" style={{ position: 'fixed', top: pos.top, left: pos.left, width: width ?? 220, maxHeight: '60vh', overflowY: 'auto' }} onClick={e => { if ((e.target as HTMLElement).closest('button:not([data-keep])')) close(); }}>
+        <div ref={menuRef} className="menu" role="menu" style={{ transformOrigin: align === 'right' ? 'top right' : 'top left', position: 'fixed', top: pos.top, left: pos.left, width: width ?? 220, maxHeight: '60vh', overflowY: 'auto' }} onClick={e => { if ((e.target as HTMLElement).closest('button:not([data-keep])')) close(); }}>
           {typeof children === 'function' ? children(close) : children}
         </div>, document.body)}
     </span>
@@ -189,7 +272,7 @@ export function Toaster() {
       {toasts.map(t => {
         const I = t.kind === 'success' ? Check : t.kind === 'error' ? AlertCircle : t.kind === 'warning' ? AlertTriangle : Info;
         return (
-          <div key={t.id} className={cx('toast', t.kind)}>
+          <div key={t.id} className={cx('toast', t.kind, t.leaving && 'leaving')}>
             <I className="ti" />
             <div className="flex1"><div className="tt">{t.title}</div>{t.body && <div className="tb">{t.body}</div>}
               {t.action && <Button size="xs" style={{ marginTop: 8 }} onClick={() => { t.action!.run(); dismissToast(t.id); }}>{t.action.label}</Button>}</div>
@@ -250,6 +333,7 @@ export function DataTable<T extends { id: string }>({ rows, columns, selected, o
 }) {
   const [sort, setSort] = useState(initialSort ?? null);
   const [page, setPage] = useState(0);
+  const fresh = useFresh();
   const cols = columns.filter(c => !visible || visible.includes(c.key));
   const sorted = useMemo(() => {
     if (!sort) return rows;
@@ -279,9 +363,9 @@ export function DataTable<T extends { id: string }>({ rows, columns, selected, o
               </th>
             ))}
           </tr></thead>
-          <tbody>
+          <tbody key={`${page}-${sort?.key}-${sort?.dir}`} className="rows-in">
             {slice.map(r => (
-              <tr key={r.id} className={cx(onRowClick && 'clickable', selected?.has(r.id) && 'selected')} onClick={e => { if ((e.target as HTMLElement).closest('input,button,a,select')) return; onRowClick?.(r); }}>
+              <tr key={r.id} className={cx(onRowClick && 'clickable', selected?.has(r.id) && 'selected', fresh.has(r.id) && 'fresh')} onClick={e => { if ((e.target as HTMLElement).closest('input,button,a,select')) return; onRowClick?.(r); }}>
                 {onSelect && <td className="w-check"><input type="checkbox" aria-label="Selecionar linha" checked={!!selected?.has(r.id)} onChange={() => toggle(r.id)} /></td>}
                 {cols.map(c => <td key={c.key} style={{ textAlign: c.align }}>{c.render(r)}</td>)}
               </tr>

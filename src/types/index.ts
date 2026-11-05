@@ -39,6 +39,8 @@ export interface User {
   title: string;
   invitedAt?: ISODate;
   pending?: boolean;
+  /** SHA-256 of the password (simulated auth — replace with a real provider in production). */
+  passwordHash?: string;
 }
 
 export interface Team { id: ID; name: string; department: string; leadId?: ID; }
@@ -531,7 +533,7 @@ export interface Appearance {
     iconSize: number;
     widgetRow: number;
   };
-  a11y: { reduceMotion: boolean; highContrast: boolean; autoLite: boolean };
+  a11y: { reduceMotion: boolean; highContrast: boolean; autoLite: boolean; motionPref?: 'system' | 'full' | 'reduce' };
 }
 
 export interface AppearancePreset { id: ID; name: string; builtin?: boolean; appearance: Appearance; layout?: Widget[]; }

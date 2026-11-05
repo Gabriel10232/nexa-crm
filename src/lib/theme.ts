@@ -33,7 +33,8 @@ export function applyAppearance(a: Appearance) {
   const s = a.space;
   const t = a.type;
   const lite = a.a11y.autoLite && shouldLite();
-  const reduceMotion = a.a11y.reduceMotion || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const pref = a.a11y.motionPref ?? (a.a11y.reduceMotion ? 'reduce' : 'system');
+  const reduceMotion = pref === 'reduce' || (pref === 'system' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
   root.dataset.theme = mode;
   root.dataset.glass = !g.enabled ? 'off' : lite ? 'lite' : 'on';

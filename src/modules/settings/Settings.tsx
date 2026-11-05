@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Upload, Palette, Plus, Trash2, Plug, Database, RotateCcw, Download, Columns3, Save } from 'lucide-react';
 import type { CustomField, OrgSettings } from '../../types';
 import { useTenant, store } from '../../store/store';
-import { useSession } from '../../services/auth';
+import { useSession, enterDemo } from '../../services/auth';
 import { settings } from '../../services/crm';
 import { INTEGRATIONS, STATUS_LABEL } from '../../services/integrations';
 import { activeAdapter } from '../../services/storage';
@@ -181,7 +181,8 @@ function PrivacyTab() {
         <div className="row"><span className="icon-bubble neutral"><Database /></span><div><strong className="small">Armazenamento</strong><div className="xs muted">Adapter ativo: {activeAdapter.name}. Dados isolados por organização e persistidos neste navegador.</div></div></div>
         <div className="row wrap">
           <Button size="sm" disabled={!can('export')} onClick={() => { download(`nexa-backup-${d.org.name}-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(d, null, 2), 'application/json'); toast('success', 'Backup exportado'); }}><Download />Exportar todos os dados (JSON)</Button>
-          <Button size="sm" variant="danger" disabled={!can('settings')} onClick={async () => { if (await confirm({ title: 'Restaurar dados de demonstração?', body: 'Todas as organizações voltam ao estado inicial. Alterações feitas serão perdidas.', typeToConfirm: 'RESTAURAR', danger: true, confirmLabel: 'Restaurar' })) { store.reset(); location.hash = '#/login'; toast('success', 'Dados de demonstração restaurados'); } }}><RotateCcw />Restaurar dados de demonstração</Button>
+          <Button size="sm" disabled={!can('settings')} onClick={() => { enterDemo(); location.hash = '#/'; toast('info', 'Demonstração carregada', 'Organizações fictícias adicionadas no menu do usuário → Organização.'); }}><RotateCcw />Carregar demonstração (dados fictícios)</Button>
+          <Button size="sm" variant="danger" disabled={!can('settings')} onClick={async () => { if (await confirm({ title: 'Apagar todos os dados?', body: 'Usuários, organizações e registros deste navegador serão apagados. O sistema volta ao primeiro acesso.', typeToConfirm: 'APAGAR', danger: true, confirmLabel: 'Apagar tudo' })) { store.reset(); location.hash = '#/login'; toast('success', 'Dados apagados'); } }}><Trash2 />Apagar todos os dados</Button>
         </div>
       </div>
     </div>

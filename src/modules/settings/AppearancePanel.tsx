@@ -187,7 +187,11 @@ export function AppearancePanel({ open, onClose }: { open: boolean; onClose: () 
 
         <section className="ap-section">
           <h4>Acessibilidade e performance</h4>
-          <div className="ap-row"><span>Reduzir animações</span><Switch label="Reduzir animações" checked={draft.a11y.reduceMotion} onChange={v => update(a => { a.a11y.reduceMotion = v; })} /></div>
+          <div className="stack-sm"><span>Animações</span>
+            <Seg label="Animações" value={draft.a11y.motionPref ?? (draft.a11y.reduceMotion ? 'reduce' : 'system')} onChange={v => update(a => { a.a11y.motionPref = v; a.a11y.reduceMotion = v === 'reduce'; })}
+              options={[{ value: 'system', label: 'Seguir o sistema' }, { value: 'full', label: 'Sempre completas' }, { value: 'reduce', label: 'Reduzidas' }]} />
+            {(draft.a11y.motionPref ?? 'system') === 'system' && window.matchMedia('(prefers-reduced-motion: reduce)').matches && <Notice tone="warning">Seu sistema pede movimento reduzido, então só fades são exibidos. Escolha "Sempre completas" para ver todas as animações.</Notice>}
+          </div>
           <div className="ap-row"><span>Desativar efeitos glass</span><Switch label="Desativar glass" checked={!draft.glass.enabled} onChange={v => update(a => { a.glass.enabled = !v; })} /></div>
           <div className="ap-row"><span>Alto contraste</span><Switch label="Alto contraste" checked={draft.a11y.highContrast} onChange={v => update(a => { a.a11y.highContrast = v; if (v) { a.glass.borderAlpha = Math.max(a.glass.borderAlpha, .6); } })} /></div>
           <div className="ap-row"><span>Simplificar efeitos automaticamente em dispositivos modestos</span><Switch label="Modo leve automático" checked={draft.a11y.autoLite} onChange={v => update(a => { a.a11y.autoLite = v; })} /></div>

@@ -4,7 +4,7 @@ import { ArrowDownRight, ArrowUpRight, Minus, CalendarClock, AlertTriangle, Phon
 import type { KpiMetric, TenantData, User, Widget, WidgetType, WidgetConfig } from '../../types';
 import { KPI_METRICS, WIDGET_CATALOG, newWidget } from '../../config/widgets';
 import { LineChart, Donut, Funnel, HBars, Sparkline } from '../../components/charts';
-import { Avatar, Badge, Button, Empty, Field, Input, Modal, Progress, Select, Switch, Textarea } from '../../components/ui';
+import { CountUp, Avatar, Badge, Button, Empty, Field, Input, Modal, Progress, Select, Switch, Textarea } from '../../components/ui';
 import { Money, UserChip } from '../../components/common';
 import { computeKpis, customMetric, forecastSeries, funnel, goalProgress, leadsWithoutContact, monthlySeries, ranking, staleDeals, Filters, scoped } from '../../services/metrics';
 import { tasks as taskSvc, settings } from '../../services/crm';
@@ -49,7 +49,7 @@ export function WidgetBody({ w, ctx }: { w: Widget; ctx: WCtx }) {
         <div className="kpi">
           <div className="label"><span className="ellipsis">{w.title}</span></div>
           <div className="row between" style={{ alignItems: 'flex-end' }}>
-            <div className="value" style={{ color: w.config.color || undefined }}>{m === 'custom' ? num(v) : fmtKpi(m, v)}</div>
+            <div className="value" style={{ color: w.config.color || undefined }}><CountUp value={v} format={n => (m === 'custom' ? num(n) : fmtKpi(m, n))} /></div>
             {w.h > 1 && <Sparkline values={series} color={w.config.color || 'var(--accent)'} />}
           </div>
           {ctx.f.compare && m !== 'custom' ? <span className="xs muted row" style={{ gap: 6 }}><Delta cur={v} prev={prev[m]} invert={m === 'lost_count' || m === 'avg_cycle' || m === 'pending_activities'} /> vs período anterior</span> : <span className="xs muted">{w.description ?? ''}</span>}
@@ -98,6 +98,7 @@ export function WidgetBody({ w, ctx }: { w: Widget; ctx: WCtx }) {
     }
     case 'ranking': {
       const r = ranking(d, user, f).slice(0, 6);
+      if (!r.length) return <Empty compact title="Sem vendedores" text="Convide vendedores em Equipe para ver o ranking." />;
       return <div className="list">{r.map((x, i) => (
         <div key={x.user.id} className="list-item"><span className="strong muted num" style={{ width: 18 }}>{i + 1}</span><Avatar name={x.user.name} color={x.user.color} size="sm" />
           <span className="flex1 ellipsis">{x.user.name}</span><span className="xs muted">{x.count} venda(s)</span><strong className="num"><Money v={x.revenue} compact /></strong></div>
@@ -129,6 +130,7 @@ export function WidgetBody({ w, ctx }: { w: Widget; ctx: WCtx }) {
     }
     case 'recent_customers': {
       const c = scoped(d, user, d.deals).filter(x => x.status === 'won').sort((a, b) => (b.closedAt ?? '').localeCompare(a.closedAt ?? '')).slice(0, 6);
+      if (!c.length) return <Empty compact title="Nenhum cliente ainda" text="Vendas ganhas aparecerão aqui." />;
       return <div className="list">{c.map(x => {
         const co = d.companies.find(y => y.id === x.companyId); const p = d.people.find(y => y.id === x.personId);
         return <Link key={x.id} to={co ? `/companies/${co.id}` : `/people/${p?.id}`} className="list-item click"><Avatar name={co?.tradeName ?? p?.name ?? '?'} square size="sm" /><span className="flex1 ellipsis small">{co?.tradeName ?? p?.name}</span><span className="xs muted">{relTime(x.closedAt)}</span></Link>;
@@ -144,10 +146,12 @@ export function WidgetBody({ w, ctx }: { w: Widget; ctx: WCtx }) {
     }
     case 'timeline': {
       const a = d.activities.slice().sort((x, y) => y.at.localeCompare(x.at)).slice(0, 7);
+      if (!a.length) return <Empty compact title="Sem atividades" text="Interações registradas aparecerão aqui." />;
       return <div className="list">{a.map(x => <div key={x.id} className="list-item"><span className="icon-bubble neutral"><Icon name={ACTIVITY[x.type].icon} /></span><span className="flex1 ellipsis small">{x.title}<br /><span className="xs muted">{relTime(x.at)} · {d.users.find(u => u.id === x.userId)?.name}</span></span></div>)}</div>;
     }
     case 'inbox': {
       const c = d.conversations.filter(x => x.status !== 'resolvida').sort((a, b) => b.unread - a.unread).slice(0, 6);
+      if (!c.length) return <Empty compact title="Caixa vazia" text="Nenhuma conversa em aberto." />;
       return <div className="list">{c.map(x => (
         <Link key={x.id} to={`/inbox?c=${x.id}`} className="list-item click"><span className="icon-bubble"><Icon name={CHANNELS[x.channel].icon} /></span>
           <span className="flex1 ellipsis small"><span className="strong">{d.people.find(p => p.id === x.personId)?.name}</span><br /><span className="xs muted">{x.messages[x.messages.length - 1]?.body}</span></span>{x.unread > 0 && <Badge tone="accent">{x.unread}</Badge>}</Link>

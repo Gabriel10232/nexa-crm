@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { UserPlus, Pencil, Power, Check, X, Monitor, LogOut, Search, Download, Plus, Eye } from 'lucide-react';
 import type { RoleKey, User, Action } from '../../types';
 import { useTenant } from '../../store/store';
-import { useSession, impersonate } from '../../services/auth';
+import { useSession, impersonate, hashPassword } from '../../services/auth';
 import { team as teamSvc, settings } from '../../services/crm';
 import { PageHeader, UserChip } from '../../components/common';
 import { Avatar, Badge, Button, Column, DataTable, Field, Input, Modal, Select, Tabs, Notice, Empty, SimBadge } from '../../components/ui';
@@ -79,16 +79,19 @@ export default function Team() {
 function UserModal({ u: init, onClose }: { u: User; onClose: () => void }) {
   const d = useTenant(); const { realUser } = useSession();
   const [u, setU] = useState(init); const [err, setErr] = useState<Record<string, string>>({});
+  const [pw, setPw] = useState('');
   const isNew = !d.users.some(x => x.id === u.id);
-  const save = () => {
+  const save = async () => {
     const e: Record<string, string> = {};
     if (!u.name.trim()) e.name = 'Informe o nome.';
     if (!u.email.trim() || !isEmail(u.email)) e.email = 'Informe um e-mail válido.';
     if (d.users.some(x => x.id !== u.id && normalize(x.email) === normalize(u.email))) e.email = 'Já existe um usuário com este e-mail.';
     if (u.role === 'owner' && realUser.role !== 'owner') e.role = 'Apenas o proprietário pode atribuir este perfil.';
+    if (isNew && pw.length < 6) e.pw = 'Defina uma senha provisória com pelo menos 6 caracteres.';
+    if (!isNew && pw && pw.length < 6) e.pw = 'Use pelo menos 6 caracteres.';
     setErr(e); if (Object.keys(e).length) return;
-    teamSvc.saveUser(u);
-    toast(isNew ? 'warning' : 'success', isNew ? 'Convite criado (simulado)' : 'Usuário atualizado', isNew ? `E-mail transacional não conectado: compartilhe o acesso com ${u.email} manualmente. Senha demo: demo123.` : undefined);
+    teamSvc.saveUser({ ...u, pending: false, ...(pw ? { passwordHash: await hashPassword(pw) } : {}) });
+    toast(isNew ? 'warning' : 'success', isNew ? 'Usuário criado' : 'Usuário atualizado', isNew ? `E-mail transacional não conectado: envie a ${u.email} o e-mail e a senha provisória por outro canal.` : pw ? 'Senha redefinida.' : undefined);
     onClose();
   };
   return (
@@ -98,6 +101,7 @@ function UserModal({ u: init, onClose }: { u: User; onClose: () => void }) {
         <Field label="E-mail" required error={err.email}><Input type="email" value={u.email} onChange={e => setU({ ...u, email: e.target.value })} /></Field>
         <Field label="Cargo"><Input value={u.title} onChange={e => setU({ ...u, title: e.target.value })} /></Field>
         <Field label="Equipe"><Select value={u.teamId} onChange={e => setU({ ...u, teamId: e.target.value })} options={d.teams.map(t => ({ value: t.id, label: t.name }))} /></Field>
+        <Field label={isNew ? 'Senha provisória' : 'Redefinir senha'} required={isNew} error={err.pw} hint={isNew ? undefined : 'Deixe vazio para manter a atual'}><Input type="password" autoComplete="new-password" value={pw} onChange={e => setPw(e.target.value)} /></Field>
         <Field label="Perfil de acesso" error={err.role} className="full"><Select value={u.role} onChange={e => setU({ ...u, role: e.target.value as RoleKey })} options={ROLES.map(r => ({ value: r.key, label: `${r.label} — ${r.description}` }))} /></Field>
       </div>
     </Modal>

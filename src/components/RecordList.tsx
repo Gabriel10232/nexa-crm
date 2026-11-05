@@ -7,7 +7,7 @@ import { Button, Column, DataTable, Field, Input, Menu, Select, Seg, usePaged, P
 import { useTenant } from '../store/store';
 import { settings } from '../services/crm';
 import { useSession } from '../services/auth';
-import { prompt, toast, confirm } from '../store/ui';
+import { prompt, toast, confirm, useFresh } from '../store/ui';
 import { daysBetween, download, normalize, toCSV, uid } from '../lib/utils';
 
 export interface FilterDef<T> {
@@ -37,6 +37,7 @@ export interface RecordListProps<T extends { id: string }> {
 export function RecordList<T extends { id: string }>(p: RecordListProps<T>) {
   const d = useTenant(); const { can } = useSession();
   const loading = useLoading(300);
+  const fresh = useFresh();
   const [q, setQ] = useState('');
   const [fv, setFv] = useState<Record<string, string>>(p.initialQuery ?? {});
   const [showFilters, setShowFilters] = useState(Object.keys(p.initialQuery ?? {}).length > 0);
@@ -146,9 +147,9 @@ export function RecordList<T extends { id: string }>(p: RecordListProps<T>) {
           </div>
         ) : (
           <>
-            <div className="cards">
+            <div className="cards stagger" key={paged.page}>
               {paged.slice.map(r => (
-                <div key={r.id} className={`card rcard ${selected.has(r.id) ? 'selected' : ''}`} onClick={e => { if ((e.target as HTMLElement).closest('input,button,a')) return; p.onOpen(r); }} tabIndex={0} onKeyDown={e => e.key === 'Enter' && p.onOpen(r)} style={selected.has(r.id) ? { borderColor: 'var(--accent)' } : undefined}>
+                <div key={r.id} className={`card rcard ${selected.has(r.id) ? 'selected' : ''} ${fresh.has(r.id) ? 'fresh' : ''}`} onClick={e => { if ((e.target as HTMLElement).closest('input,button,a')) return; p.onOpen(r); }} tabIndex={0} onKeyDown={e => e.key === 'Enter' && p.onOpen(r)} style={selected.has(r.id) ? { borderColor: 'var(--accent)' } : undefined}>
                   {p.bulk && <input type="checkbox" aria-label="Selecionar" checked={selected.has(r.id)} onChange={() => { const s = new Set(selected); s.has(r.id) ? s.delete(r.id) : s.add(r.id); setSelected(s); }} style={{ position: 'absolute', top: 14, right: 14 }} />}
                   {p.card(r)}
                 </div>

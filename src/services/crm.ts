@@ -10,6 +10,7 @@ import { currentUserId } from './auth';
 import { fire, executeAutomation, runScheduled, sampleContext, nextSeller } from './automation';
 import { deepClone, digits, normalize, uid } from '../lib/utils';
 import { LEAD_STATUS } from '../config/labels';
+import { markNew } from '../store/ui';
 
 const nowIso = () => new Date().toISOString();
 const me = () => currentUserId();
@@ -26,7 +27,7 @@ const replace = <T extends { id: string }>(arr: T[], id: string, patch: Partial<
 /* ============================ LEADS ============================ */
 export const leads = {
   create(input: Omit<Lead, 'id' | 'createdAt' | 'score'> & { score?: number }) {
-    const l: Lead = { ...input, id: uid('ld'), createdAt: nowIso(), score: input.score ?? 40 };
+    const l: Lead = { ...input, id: uid('ld'), createdAt: nowIso(), score: input.score ?? 40 }; markNew(l.id);
     let runs: AutomationRun[] = [];
     updateTenant(d => {
       d.leads = [l, ...d.leads];
@@ -169,7 +170,7 @@ export function findDuplicates(d: TenantData, q: { name?: string; email?: string
 /* ============================ PEOPLE & COMPANIES ============================ */
 export const people = {
   create(p: Omit<Person, 'id' | 'createdAt' | 'companyHistory'>) {
-    const x: Person = { ...p, id: uid('pe'), createdAt: nowIso(), companyHistory: p.companyId ? [{ companyId: p.companyId, from: nowIso() }] : [] };
+    const x: Person = { ...p, id: uid('pe'), createdAt: nowIso(), companyHistory: p.companyId ? [{ companyId: p.companyId, from: nowIso() }] : [] }; markNew(x.id);
     updateTenant(d => { d.people = [x, ...d.people]; act(d, 'system', 'Pessoa cadastrada', { personId: x.id, companyId: x.companyId }); audit(d, 'create', 'Pessoa', `Cadastrou ${x.name}`, x.id); });
     return x;
   },
@@ -202,7 +203,7 @@ export const people = {
 
 export const companies = {
   create(c: Omit<Company, 'id' | 'createdAt'>) {
-    const x: Company = { ...c, id: uid('co'), createdAt: nowIso() };
+    const x: Company = { ...c, id: uid('co'), createdAt: nowIso() }; markNew(x.id);
     updateTenant(d => { d.companies = [x, ...d.companies]; act(d, 'system', 'Empresa cadastrada', { companyId: x.id }); audit(d, 'create', 'Empresa', `Cadastrou ${x.tradeName}`, x.id); });
     return x;
   },
@@ -240,7 +241,7 @@ export function logActivity(a: Omit<Activity, 'id' | 'at' | 'userId'> & { at?: s
 /* ============================ DEALS & PIPELINE ============================ */
 export const deals = {
   create(x: Omit<Deal, 'id' | 'openedAt' | 'stageEnteredAt' | 'files' | 'status'> & { status?: Deal['status'] }) {
-    const deal: Deal = { ...x, status: x.status ?? 'open', id: uid('dl'), openedAt: nowIso(), stageEnteredAt: nowIso(), files: [] };
+    const deal: Deal = { ...x, status: x.status ?? 'open', id: uid('dl'), openedAt: nowIso(), stageEnteredAt: nowIso(), files: [] }; markNew(deal.id);
     updateTenant(d => {
       d.deals = [deal, ...d.deals];
       act(d, 'deal', 'Oportunidade criada', { dealId: deal.id, personId: deal.personId, companyId: deal.companyId }, deal.name);
@@ -300,7 +301,7 @@ export const tasks = {
   save(t: Partial<Task> & { title: string }) {
     updateTenant(d => {
       if (t.id && d.tasks.some(x => x.id === t.id)) d.tasks = replace(d.tasks, t.id, t);
-      else { const n: Task = { type: 'tarefa', due: nowIso(), done: false, ownerId: me(), priority: 'media', refs: {}, ...t, id: uid('tk') }; d.tasks = [n, ...d.tasks]; act(d, 'task', `Tarefa criada: ${n.title}`, n.refs); }
+      else { const n: Task = { type: 'tarefa', due: nowIso(), done: false, ownerId: me(), priority: 'media', refs: {}, ...t, id: uid('tk') }; d.tasks = [n, ...d.tasks]; markNew(n.id); act(d, 'task', `Tarefa criada: ${n.title}`, n.refs); }
       audit(d, 'save', 'Tarefa', t.title);
     });
   },
@@ -322,7 +323,7 @@ export const events = {
         d.events = replace(d.events, e.id, e);
         if (prev.start !== e.start) act(d, 'change', `Evento reagendado: ${e.title}`, e.refs ?? prev.refs);
       } else {
-        const n: CalEvent = { type: 'reuniao', participants: [me()], ownerId: me(), refs: {}, done: false, reminderMin: 15, ...e, id: uid('ev') };
+        const n: CalEvent = { type: 'reuniao', participants: [me()], ownerId: me(), refs: {}, done: false, reminderMin: 15, ...e, id: uid('ev') }; markNew(n.id);
         d.events = [n, ...d.events];
         if (n.type === 'reuniao' || n.type === 'demonstracao') act(d, 'meeting', `Agendado: ${n.title}`, n.refs);
       }
