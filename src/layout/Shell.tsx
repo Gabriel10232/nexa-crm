@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
+import { animateTheme } from '../lib/motion';
 import { Loader2 } from 'lucide-react';
 import { useSaveStatus } from '../store/store';
 import { applyAppearance } from '../lib/theme';
@@ -77,10 +77,7 @@ export function Shell() {
   ];
 
   const mode = resolvedMode(d.appearance);
-  const toggleTheme = (e: React.MouseEvent) => {
-    const next = { ...d.appearance, mode: (mode === 'dark' ? 'light' : 'dark') as 'light' | 'dark' };
-    animateTheme(e, () => { applyAppearance(next); settingsSvc.appearance(next); });
-  };
+
   const unreadNotif = d.notifications.filter(n => !n.read).length;
 
   return (
@@ -129,7 +126,7 @@ export function Shell() {
           {can('create') && <Button variant="primary" size="sm" onClick={() => setNewRec(true)} className="hide-sm"><Plus />Novo</Button>}
           <Button variant="ghost" icon onClick={() => uiActions.copilot(true)} aria-label="Abrir NEXA Copilot (Ctrl J)" title="NEXA Copilot (Ctrl J)"><Sparkles /></Button>
           <Button variant="ghost" icon onClick={() => setAppearance(true)} aria-label="Personalizar aparência" title="Personalizar aparência" className="hide-sm"><Palette /></Button>
-          <Button variant="ghost" icon onClick={toggleTheme} aria-label={mode === 'dark' ? 'Ativar tema claro' : 'Ativar tema escuro'} title="Alternar tema" className="theme-btn">{mode === 'dark' ? <Sun key="sun" className="icon-swap" /> : <Moon key="moon" className="icon-swap" />}</Button>
+          <ThemeToggle mode={mode} />
           <Menu width={340} trigger={p => (
             <Button variant="ghost" icon {...p} aria-label={`Notificações (${unreadNotif} não lidas)`} style={{ position: 'relative' }}>
               <Bell />{unreadNotif > 0 && <span style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 9, background: 'var(--danger)' }} />}
@@ -203,6 +200,24 @@ export function Shell() {
   );
 }
 
+/** Own component + local state: the icon flips instantly while only CSS variables change
+ * during the reveal; the store (and the rest of the app) updates after the animation. */
+function ThemeToggle({ mode }: { mode: 'dark' | 'light' }) {
+  const d = useTenant();
+  const [pending, setPending] = useState<'dark' | 'light' | null>(null);
+  const shown = pending ?? mode;
+  const toggle = (e: React.MouseEvent) => {
+    const next = { ...d.appearance, mode: (shown === 'dark' ? 'light' : 'dark') as 'light' | 'dark' };
+    setPending(next.mode);
+    animateTheme(e, () => applyAppearance(next), () => { settingsSvc.appearance(next); setPending(null); });
+  };
+  return (
+    <Button variant="ghost" icon onClick={toggle} aria-label={shown === 'dark' ? 'Ativar tema claro' : 'Ativar tema escuro'} title="Alternar tema" className="theme-btn">
+      {shown === 'dark' ? <Sun key="sun" className="icon-swap" /> : <Moon key="moon" className="icon-swap" />}
+    </Button>
+  );
+}
+
 const PageFallback = () => (
   <div className="page-fallback" aria-busy="true" aria-label="Carregando">
     <div className="skel" style={{ height: 30, width: 240, borderRadius: 10 }} />
@@ -218,23 +233,6 @@ function SaveIndicator() {
       {s === 'saving' ? <><Loader2 className="spin" size={13} />Salvando…</> : s === 'saved' ? <><Check size={13} className="draw" />Salvo</> : null}
     </span>
   );
-}
-
-/** Theme switch with a circular reveal from the button (View Transitions API), falling back to a colour cross-fade. */
-function animateTheme(e: React.MouseEvent, apply: () => void) {
-  const root = document.documentElement;
-  const doc = document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } };
-  if (root.dataset.motion === 'reduce') { apply(); return; }
-  if (doc.startViewTransition) {
-    const x = e.clientX, y = e.clientY;
-    root.style.setProperty('--vt-x', `${x}px`); root.style.setProperty('--vt-y', `${y}px`);
-    root.style.setProperty('--vt-r', `${Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))}px`);
-    root.classList.add('vt-theme');
-    doc.startViewTransition(() => flushSync(apply)).finished.finally(() => root.classList.remove('vt-theme'));
-  } else {
-    root.classList.add('theme-fade'); apply();
-    setTimeout(() => root.classList.remove('theme-fade'), 500);
-  }
 }
 
 function MobileFab({ onNew }: { onNew: () => void }) {

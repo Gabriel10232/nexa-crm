@@ -33,9 +33,16 @@ export function PageHeader({ title, desc, crumbs, actions, children }: { title: 
 }
 
 /* ---------- Lookups ---------- */
+/** One set of lookup maps per tenant-data version, shared by every row/card on screen. */
+const lookupCache = new WeakMap<TenantData, ReturnType<typeof buildLookups>>();
 export function useLookups() {
   const d = useTenant();
-  return useMemo(() => {
+  let l = lookupCache.get(d);
+  if (!l) { l = buildLookups(d); lookupCache.set(d, l); }
+  return l;
+}
+function buildLookups(d: TenantData) {
+  return (() => {
     const users = new Map(d.users.map(u => [u.id, u]));
     const people = new Map(d.people.map(p => [p.id, p]));
     const companies = new Map(d.companies.map(c => [c.id, c]));
@@ -44,7 +51,7 @@ export function useLookups() {
     const stages = new Map(d.pipelines.flatMap(p => p.stages.map(s => [s.id, { ...s, pipeline: p }] as const)));
     const tagColor = (n: string) => d.tags.find(t => t.name === n)?.color;
     return { users, people, companies, deals, leads, stages, tagColor, user: (id?: string) => (id ? users.get(id) : undefined) };
-  }, [d]);
+  })();
 }
 
 export const UserChip = ({ id }: { id?: string }) => {

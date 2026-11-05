@@ -3,7 +3,7 @@ import {
   LayoutGrid, Palette, Plus, Undo2, Redo2, RotateCcw, Save, X, Settings2, Copy, Lock, Unlock, EyeOff, Eye, Trash2,
   Download, ChevronDown, Check, Star, Pencil, Users, ChevronLeft, ChevronRight, Printer, GripVertical,
 } from 'lucide-react';
-import type { DashboardLayout, RoleKey, Widget } from '../../types';
+import type { DashboardLayout, RoleKey, TenantData, Widget } from '../../types';
 import { useTenant } from '../../store/store';
 import { useSession } from '../../services/auth';
 import { settings } from '../../services/crm';
@@ -24,15 +24,25 @@ function useCols() {
 }
 const spanFor = (w: number, cols: number) => (cols === 12 ? w : cols === 6 ? clamp(Math.ceil(w / 2), 1, 6) : 1);
 
+/** Data slices widgets read. Appearance/dashboard-layout edits don't touch these, so the
+ * previous object is reused and memoised widgets skip re-rendering (e.g. on theme switch). */
+const DATA_KEYS: (keyof TenantData)[] = ['users', 'teams', 'leads', 'people', 'companies', 'pipelines', 'deals', 'activities', 'tasks', 'events', 'conversations', 'proposals', 'goals', 'quickNotes', 'org', 'tags'];
+export function useStableData(d: TenantData): TenantData {
+  const ref = useRef(d);
+  if (ref.current !== d && DATA_KEYS.some(k => ref.current[k] !== d[k])) ref.current = d;
+  return ref.current;
+}
+
 export default function Dashboard() {
-  const d = useTenant();
+  const live = useTenant();
+  const d = useStableData(live);
   const { user, can } = useSession();
   const admin = ['owner', 'admin', 'manager'].includes(user.role);
   const loading = useLoading(420);
   const cols = useCols();
 
   /* ---------- Layout selection (per user) ---------- */
-  const visible = d.dashboards.filter(l => admin || l.ownerId === user.id || (l.roles.includes(user.role) && (l.shared || !l.ownerId)));
+  const visible = live.dashboards.filter(l => admin || l.ownerId === user.id || (l.roles.includes(user.role) && (l.shared || !l.ownerId)));
   const storeKey = `nexa:dash:${user.id}`;
   const [activeId, setActiveId] = useState<string>(() => localStorage.getItem(storeKey) ?? '');
   const layout = visible.find(l => l.id === activeId) ?? visible.find(l => l.ownerId === user.id) ?? visible.find(l => l.roles.includes(user.role) && l.isDefault) ?? visible.find(l => l.roles.includes(user.role)) ?? visible.find(l => l.isDefault) ?? visible[0];
@@ -65,13 +75,13 @@ export default function Dashboard() {
     if (!admin && !layout.ownerId) {
       // Non-admin personalising a team layout → personal copy
       const copy: DashboardLayout = { ...deepClone(layout), id: uid('dash'), name: 'Meu dashboard', ownerId: user.id, shared: false, isDefault: false, roles: [user.role], widgets: ws, updatedAt: new Date().toISOString() };
-      settings.dashboards([...d.dashboards, copy]); setActiveId(copy.id);
+      settings.dashboards([...live.dashboards, copy]); setActiveId(copy.id);
       if (!silent) toast('success', 'Dashboard pessoal criado', 'O layout da equipe continua intacto.');
       return;
     }
-    settings.dashboards(d.dashboards.map(l => (l.id === layout.id ? { ...l, widgets: ws, updatedAt: new Date().toISOString() } : l)));
+    settings.dashboards(live.dashboards.map(l => (l.id === layout.id ? { ...l, widgets: ws, updatedAt: new Date().toISOString() } : l)));
     if (!silent) toast('success', 'Dashboard salvo');
-  }, [layout, admin, d.dashboards, user]);
+  }, [layout, admin, live.dashboards, user]);
 
   const change = (fn: (ws: Widget[]) => Widget[], track = true) => {
     setDraft(cur => {
@@ -169,18 +179,18 @@ export default function Dashboard() {
     const name = await prompt({ title: dup ? 'Duplicar dashboard' : 'Novo dashboard', label: 'Nome', initial: dup ? `${layout?.name} (cópia)` : '', required: true });
     if (!name) return;
     const l: DashboardLayout = { id: uid('dash'), name, roles: [user.role], allowPersonal: true, shared: admin, ownerId: admin ? undefined : user.id, widgets: dup && layout ? deepClone(layout.widgets).map(w => ({ ...w, id: uid('w') })) : [], updatedAt: new Date().toISOString() };
-    settings.dashboards([...d.dashboards, l]); setActiveId(l.id);
+    settings.dashboards([...live.dashboards, l]); setActiveId(l.id);
     toast('success', `Dashboard "${name}" criado`);
     if (!dup) { setDraft([]); hist.current = { past: [], future: [] }; setEditing(true); setAdding(true); }
   };
-  const renameLayout = async () => { const n = await prompt({ title: 'Renomear dashboard', label: 'Nome', initial: layout?.name, required: true }); if (n && layout) settings.dashboards(d.dashboards.map(l => (l.id === layout.id ? { ...l, name: n } : l))); };
+  const renameLayout = async () => { const n = await prompt({ title: 'Renomear dashboard', label: 'Nome', initial: layout?.name, required: true }); if (n && layout) settings.dashboards(live.dashboards.map(l => (l.id === layout.id ? { ...l, name: n } : l))); };
   const deleteLayout = async () => {
     if (!layout) return;
     if (visible.length <= 1) { toast('error', 'Não é possível excluir o único dashboard.'); return; }
     if (!(await confirm({ title: `Excluir o dashboard "${layout.name}"?`, body: 'Os widgets deste layout serão perdidos.', danger: true, confirmLabel: 'Excluir' }))) return;
-    settings.dashboards(d.dashboards.filter(l => l.id !== layout.id)); setActiveId('');
+    settings.dashboards(live.dashboards.filter(l => l.id !== layout.id)); setActiveId('');
   };
-  const setDefault = () => { if (layout) { settings.dashboards(d.dashboards.map(l => ({ ...l, isDefault: l.id === layout.id ? true : l.roles.some(r => layout.roles.includes(r)) ? false : l.isDefault }))); toast('success', `"${layout.name}" é o padrão para ${layout.roles.length} perfil(is)`); } };
+  const setDefault = () => { if (layout) { settings.dashboards(live.dashboards.map(l => ({ ...l, isDefault: l.id === layout.id ? true : l.roles.some(r => layout.roles.includes(r)) ? false : l.isDefault }))); toast('success', `"${layout.name}" é o padrão para ${layout.roles.length} perfil(is)`); } };
 
   /* ---------- Export ---------- */
   const exportCsv = () => {
