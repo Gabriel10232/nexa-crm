@@ -167,21 +167,25 @@ function useBodyLock() {
 }
 
 /** Animated number (count-up) — 600ms ease-out, respects reduced motion. */
+/** Writes straight to the DOM on each frame — zero React renders while animating. */
 export function CountUp({ value, format, duration = 650 }: { value: number; format: (n: number) => string; duration?: number }) {
-  const [shown, setShown] = useState(reducedMotion() ? value : 0);
+  const el = useRef<HTMLSpanElement>(null);
   const from = useRef(reducedMotion() ? value : 0);
-  useEffect(() => {
-    if (reducedMotion() || !isFinite(value)) { setShown(value); from.current = value; return; }
+  const fmt = useRef(format); fmt.current = format;
+  useLayoutEffect(() => {
+    const node = el.current; if (!node) return;
+    if (reducedMotion() || !isFinite(value)) { node.textContent = fmt.current(value); from.current = value; return; }
     const start = performance.now(); const a = from.current; let raf = 0;
+    node.textContent = fmt.current(a);
     const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / duration); const e = 1 - Math.pow(1 - p, 3);
-      setShown(a + (value - a) * e);
+      const p = Math.min(1, Math.max(0, (t - start) / duration)); const e = 1 - Math.pow(1 - p, 3);
+      node.textContent = fmt.current(a + (value - a) * e);
       if (p < 1) raf = requestAnimationFrame(tick); else from.current = value;
     };
     raf = requestAnimationFrame(tick);
-    return () => { cancelAnimationFrame(raf); from.current = value; };
+    return () => { cancelAnimationFrame(raf); from.current = value; node.textContent = fmt.current(value); };
   }, [value, duration]);
-  return <span className="num">{format(shown)}</span>;
+  return <span ref={el} className="num" />;
 }
 
 /* ---------- Modal & drawer ---------- */

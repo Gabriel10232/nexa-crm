@@ -44,7 +44,7 @@ export default function Dashboard() {
   useEffect(() => { sessionStorage.setItem('nexa:dfilters', JSON.stringify(f)); }, [f]);
   const kpis = useMemo(() => computeKpis(d, user, f), [d, user, f]);
   const prev = useMemo(() => computeKpis(d, user, f, 1), [d, user, f]);
-  const ctx: WCtx = { d, user, f, kpis, prev };
+  const ctx: WCtx = useMemo(() => ({ d, user, f, kpis, prev }), [d, user, f, kpis, prev]);
 
   /* ---------- Edit mode with undo/redo ---------- */
   const [editing, setEditing] = useState(false);
@@ -124,6 +124,8 @@ export default function Dashboard() {
   const resizing = useRef(false);
   /* FLIP layout animation: widgets that change position glide to their new place instead of jumping. */
   const rects = useRef(new Map<string, { x: number; y: number }>());
+  // Layout reads (offsetLeft/Top) only happen when the arrangement actually changes, not on every render.
+  const layoutSig = `${cols}|${editing}|${(editing ? draft : layout?.widgets ?? []).map(x => `${x.id}:${x.w}x${x.h}:${+x.visible.desktop}${+x.visible.tablet}${+x.visible.mobile}`).join(',')}`;
   useLayoutEffect(() => {
     const grid = gridRef.current; if (!grid) { rects.current.clear(); return; }
     const next = new Map<string, { x: number; y: number }>();
@@ -136,7 +138,7 @@ export default function Dashboard() {
       }
     });
     rects.current = next;
-  });
+  }, [layoutSig]); // eslint-disable-line react-hooks/exhaustive-deps
   const resizeStart = (e: React.PointerEvent, w: Widget, axis: 'x' | 'y' | 'xy') => {
     e.preventDefault(); e.stopPropagation();
     resizing.current = true;
@@ -146,12 +148,18 @@ export default function Dashboard() {
     const sx = e.clientX, sy = e.clientY, sw = w.w, sh = w.h;
     const factor = 12 / cols;
     setDraft(cur => { hist.current.past.push(cur); hist.current.future = []; return cur; });
-    const onMove = (ev: PointerEvent) => {
-      const nw = axis !== 'y' ? clamp(Math.round(sw + ((ev.clientX - sx) / colW) * factor), 1, 12) : sw;
-      const nh = axis !== 'x' ? clamp(Math.round(sh + (ev.clientY - sy) / rowH), 1, 6) : sh;
+    // At most one state update per animation frame, and only when the snapped size changes.
+    let frame = 0, lastW = sw, lastH = sh, px = sx, py = sy;
+    const apply = () => {
+      frame = 0;
+      const nw = axis !== 'y' ? clamp(Math.round(sw + ((px - sx) / colW) * factor), 1, 12) : sw;
+      const nh = axis !== 'x' ? clamp(Math.round(sh + (py - sy) / rowH), 1, 6) : sh;
+      if (nw === lastW && nh === lastH) return;
+      lastW = nw; lastH = nh;
       setDraft(cur => cur.map(x => (x.id === w.id ? { ...x, w: nw, h: nh } : x)));
     };
-    const onUp = () => { resizing.current = false; window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); setDraft(cur => { if (autosave) commitLayout(cur, true); return cur; }); force(x => x + 1); };
+    const onMove = (ev: PointerEvent) => { px = ev.clientX; py = ev.clientY; if (!frame) frame = requestAnimationFrame(apply); };
+    const onUp = () => { if (frame) { cancelAnimationFrame(frame); apply(); } resizing.current = false; window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); setDraft(cur => { if (autosave) commitLayout(cur, true); return cur; }); force(x => x + 1); };
     window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
   };
 

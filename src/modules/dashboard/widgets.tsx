@@ -30,7 +30,7 @@ function periodFilters(w: Widget, f: Filters): Filters {
   return { ...f, period: w.config.period && w.config.period !== 'inherit' ? w.config.period : f.period, ownerId: w.config.ownerId || f.ownerId, teamId: w.config.teamId || f.teamId };
 }
 
-export function WidgetBody({ w, ctx }: { w: Widget; ctx: WCtx }) {
+function WidgetBodyImpl({ w, ctx }: { w: Widget; ctx: WCtx }) {
   const { d, user } = ctx;
   const nav = useNavigate();
   const fin = can(user.role, 'financial');
@@ -161,6 +161,9 @@ export function WidgetBody({ w, ctx }: { w: Widget; ctx: WCtx }) {
     case 'section': return null;
   }
 }
+
+/** Memoised: during drag/resize only the widget whose props changed re-renders. */
+export const WidgetBody = React.memo(WidgetBodyImpl);
 
 const Restricted = () => <Empty compact title="Dados financeiros restritos" text="Seu perfil não tem acesso a valores." />;
 
