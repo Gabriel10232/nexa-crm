@@ -8,7 +8,7 @@ import { roleOf } from '../../config/permissions';
 import { toast } from '../../store/ui';
 import { isEmail } from '../../lib/utils';
 
-export default function Login() {
+export default function Login({ testMode = false }: { testMode?: boolean }) {
   const { session } = useSession();
   const nav = useNavigate(); const loc = useLocation();
   const tenants = useStore(s => s.tenants);
@@ -76,7 +76,7 @@ export default function Login() {
             {mode === 'login' && <button type="button" className="btn ghost sm" onClick={() => toast('info', 'Recuperação de senha', 'E-mail transacional não conectado. Peça ao administrador para redefinir seu acesso.')}>Esqueci minha senha</button>}
             {!firstAccess && <button type="button" className="btn ghost sm" onClick={() => { setMode(m => (m === 'login' ? 'signup' : 'login')); setErrors({}); }}>{mode === 'login' ? 'Criar uma nova conta' : 'Já tenho conta — entrar'}</button>}
           </form>
-          <div className="divider" />
+          {testMode && <><div className="divider" />
           {demo ? (
             <>
               <span className="label">Acesso rápido · demonstração com dados fictícios</span>
@@ -91,7 +91,7 @@ export default function Login() {
             </>
           ) : (
             <button type="button" className="btn ghost sm" onClick={() => { enterDemo(); toast('info', 'Modo demonstração', 'Organizações fictícias adicionadas. Sua organização continua vazia.'); nav('/', { replace: true }); }}><Sparkles />Explorar uma demonstração com dados fictícios</button>
-          )}
+          )}</>}
         </div>
       </section>
     </div>

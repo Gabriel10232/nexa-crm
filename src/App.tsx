@@ -125,6 +125,7 @@ export default function App() {
         <Suspense fallback={<BootFallback />}>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/teste" element={<Login testMode />} />
             <Route path="/onboarding" element={<RequireAuth><Onboarding /></RequireAuth>} />
             <Route element={<RequireAuth><Shell /></RequireAuth>}>
               <Route index element={g('dashboard', <Dashboard />)} />
