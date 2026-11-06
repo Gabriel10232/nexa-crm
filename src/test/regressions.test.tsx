@@ -42,6 +42,15 @@ describe('Bug: profile menu closed when scrolling its own list', () => {
     fireEvent.scroll(document);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
+  it('behaves like a fixed modal: the page cannot scroll while the menu is open', () => {
+    open();
+    expect(document.body.style.overflow).toBe('hidden');
+    fireEvent.click(screen.getByText('Perfil'));
+    expect(document.body.style.overflow).toBe('');
+  });
+  it('scrolling past the end of the list never chains to the page', () => {
+    expect(rulesFor('.menu').join(';')).toMatch(/overscroll-behavior:\s*contain/);
+  });
   it('does not crash when the scroll target is window (not a Node)', () => {
     open();
     expect(() => act(() => { window.dispatchEvent(new Event('scroll')); })).not.toThrow();

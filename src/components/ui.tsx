@@ -166,6 +166,9 @@ function useBodyLock() {
   }, []);
 }
 
+/** Mounted while a menu is open: the page behind can't scroll, so the menu acts like a fixed modal. */
+function ScrollLock() { useBodyLock(); return null; }
+
 /** Animated number (count-up) — 600ms ease-out, respects reduced motion. */
 /** Writes straight to the DOM on each frame — zero React renders while animating. */
 export function CountUp({ value, format, duration = 650 }: { value: number; format: (n: number) => string; duration?: number }) {
@@ -261,7 +264,8 @@ export function Menu({ trigger, children, align = 'right', width }: { trigger: (
     <span ref={wrap} style={{ display: 'inline-flex' }}>
       {trigger({ onClick: () => setOpen(o => !o), 'aria-expanded': open, 'aria-haspopup': 'menu' })}
       {open && pos && createPortal(
-        <div ref={menuRef} className="menu" role="menu" style={{ transformOrigin: align === 'right' ? 'top right' : 'top left', position: 'fixed', top: pos.top, left: pos.left, width: width ?? 220, maxHeight: '60vh', overflowY: 'auto' }} onClick={e => { if ((e.target as HTMLElement).closest('button:not([data-keep])')) close(); }}>
+        <div ref={menuRef} className="menu" role="menu"  style={{ transformOrigin: align === 'right' ? 'top right' : 'top left', position: 'fixed', top: pos.top, left: pos.left, width: width ?? 220, maxHeight: '60vh', overflowY: 'auto' }} onClick={e => { if ((e.target as HTMLElement).closest('button:not([data-keep])')) close(); }}>
+          <ScrollLock />
           {typeof children === 'function' ? children(close) : children}
         </div>, document.body)}
     </span>
