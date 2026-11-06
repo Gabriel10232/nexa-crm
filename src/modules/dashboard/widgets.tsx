@@ -1,15 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowDownRight, ArrowUpRight, Minus, CalendarClock, AlertTriangle, PhoneOff, Check, Circle, Plus } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Minus, CalendarClock, AlertTriangle, PhoneOff, Check, Circle, Plus, Search, Gauge, TrendingUp, Filter, PieChart, BarChart3, Columns3, Target, Trophy, Users, CheckSquare, History, Inbox as InboxIcon, StickyNote, Heading, type LucideIcon } from 'lucide-react';
 import type { KpiMetric, TenantData, User, Widget, WidgetType, WidgetConfig } from '../../types';
 import { KPI_METRICS, WIDGET_CATALOG, newWidget } from '../../config/widgets';
 import { LineChart, Donut, Funnel, HBars, Sparkline } from '../../components/charts';
-import { CountUp, Avatar, Badge, Button, Empty, Field, Input, Modal, Progress, Select, Switch, Textarea } from '../../components/ui';
+import { CountUp, Avatar, Badge, Button, Empty, Field, Input, Modal, Progress, Select, Seg, Switch, Textarea } from '../../components/ui';
 import { Money, UserChip } from '../../components/common';
 import { computeKpis, customMetric, forecastSeries, funnel, goalProgress, leadsWithoutContact, monthlySeries, ranking, staleDeals, Filters, scoped } from '../../services/metrics';
 import { tasks as taskSvc, settings } from '../../services/crm';
 import { can } from '../../config/permissions';
-import { daysBetween, fmtDate, fmtTime, money, num, pct, relTime, groupCount, sameDay } from '../../lib/utils';
+import { daysBetween, fmtDate, fmtTime, money, num, pct, relTime, groupCount, sameDay, normalize, cx } from '../../lib/utils';
 import { LEAD_STATUS, ACTIVITY, CHANNELS } from '../../config/labels';
 import { Icon } from '../../components/ui';
 import { useTenant } from '../../store/store';
@@ -223,29 +223,59 @@ export function WidgetConfigModal({ w, onClose, onSave, admin }: { w: Widget; on
 }
 const useTenantSafe = () => useTenant();
 
-export function AddWidgetModal({ onClose, onAdd }: { onClose: () => void; onAdd: (w: Widget) => void }) {
-  const groups = ['Indicadores', 'Gráficos', 'Listas', 'Layout'] as const;
+const WIDGET_ICON: Record<string, LucideIcon> = {
+  kpi: Gauge, chart_sales: TrendingUp, chart_funnel: Filter, chart_sources: PieChart, chart_status: BarChart3, chart_forecast: TrendingUp,
+  chart_pipeline: Columns3, goals: Target, ranking: Trophy, meetings: CalendarClock, no_contact: PhoneOff, stale_deals: AlertTriangle,
+  recent_customers: Users, tasks: CheckSquare, timeline: History, inbox: InboxIcon, notes: StickyNote, section: Heading,
+};
+type LibGroup = 'Todos' | 'Indicadores' | 'Gráficos' | 'Listas' | 'Layout';
+
+/** Widget library: search + categories, keeps open so several widgets can be added in a row. */
+export function AddWidgetModal({ onClose, onAdd, existing }: { onClose: () => void; onAdd: (w: Widget) => void; existing: Widget[] }) {
+  const [q, setQ] = useState('');
+  const [group, setGroup] = useState<LibGroup>('Todos');
+  const [flash, setFlash] = useState<string | null>(null);
+  const items = useMemo(() => {
+    const kpis = (Object.entries(KPI_METRICS) as [KpiMetric, typeof KPI_METRICS[KpiMetric]][]).map(([k, m]) => ({
+      key: `kpi:${k}`, group: 'Indicadores' as const, icon: 'kpi', label: m.label, size: '3×1',
+      desc: k === 'custom' ? 'Monte sua própria métrica a partir de qualquer fonte de dados.' : '',
+      count: existing.filter(w => w.type === 'kpi' && w.config.metric === k).length,
+      make: () => newWidget('kpi', { title: m.label, config: { metric: k, period: 'inherit', custom: k === 'custom' ? { entity: 'leads', agg: 'count' } : undefined } }),
+    }));
+    const others = (Object.entries(WIDGET_CATALOG) as [WidgetType, typeof WIDGET_CATALOG[WidgetType]][]).filter(([t]) => t !== 'kpi').map(([t, c]) => ({
+      key: t, group: c.group, icon: t, label: c.label, size: `${c.w}×${c.h}`, desc: c.description,
+      count: existing.filter(w => w.type === t).length, make: () => newWidget(t),
+    }));
+    return [...kpis, ...others];
+  }, [existing]);
+  const filtered = items.filter(i => (group === 'Todos' || i.group === group) && (!q || normalize(`${i.label} ${i.desc}`).includes(normalize(q))));
+  const add = (i: typeof items[number]) => { onAdd(i.make()); setFlash(i.key); setTimeout(() => setFlash(f => (f === i.key ? null : f)), 1100); };
   return (
-    <Modal open onClose={onClose} size="xl" title="Adicionar widget" description="Escolha um componente. Depois você pode mover, redimensionar e configurar.">
+    <Modal open onClose={onClose} size="xl" title="Biblioteca de widgets" description="Clique para adicionar ao final do dashboard — depois arraste para posicionar. Você pode adicionar vários."
+      footer={<><span className="muted small" style={{ marginRight: 'auto' }}>{existing.length} widget(s) no dashboard</span><Button variant="primary" onClick={onClose}>Concluído</Button></>}>
       <div className="stack">
-        <div>
-          <div className="label" style={{ marginBottom: 8 }}>Indicadores (KPI)</div>
-          <div className="choice-grid">
-            {Object.entries(KPI_METRICS).map(([k, m]) => (
-              <button key={k} className="choice" onClick={() => onAdd(newWidget('kpi', { title: m.label, config: { metric: k as KpiMetric, period: 'inherit', custom: k === 'custom' ? { entity: 'leads', agg: 'count' } : undefined } }))}><span className="t">{m.label}</span><span className="s">{k === 'custom' ? 'Monte sua própria métrica' : 'KPI com comparação'}</span></button>
-            ))}
-          </div>
+        <div className="row wrap">
+          <div className="input-icon" style={{ flex: '1 1 240px' }}><Search /><Input type="search" role="searchbox" value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar widget…" aria-label="Buscar widget" autoFocus /></div>
+          <Seg label="Categoria" value={group} onChange={setGroup} options={(['Todos', 'Indicadores', 'Gráficos', 'Listas', 'Layout'] as LibGroup[]).map(g => ({ value: g, label: g }))} />
         </div>
-        {groups.slice(1).map(g => (
-          <div key={g}>
-            <div className="label" style={{ marginBottom: 8 }}>{g}</div>
-            <div className="choice-grid">
-              {(Object.entries(WIDGET_CATALOG) as [WidgetType, typeof WIDGET_CATALOG[WidgetType]][]).filter(([, c]) => c.group === g).map(([t, c]) => (
-                <button key={t} className="choice" onClick={() => onAdd(newWidget(t))}><span className="t"><Plus size={13} /> {c.label}</span><span className="s">{c.description}</span></button>
-              ))}
-            </div>
+        {filtered.length === 0 ? <Empty compact title="Nenhum widget encontrado" text="Tente outro termo ou categoria." /> : (
+          <div className="lib-grid">
+            {filtered.map(i => {
+              const I = WIDGET_ICON[i.icon] ?? Gauge;
+              return (
+                <button key={i.key} type="button" className={cx('lib-card', flash === i.key && 'added')} onClick={() => add(i)}>
+                  <span className="icon-bubble"><I /></span>
+                  <span className="lib-body">
+                    <span className="lib-title">{i.label}</span>
+                    {i.desc && <span className="lib-desc">{i.desc}</span>}
+                    <span className="lib-meta"><span className="lib-size">{i.size}</span>{i.count > 0 && <span className="lib-count">no dashboard ×{i.count}</span>}</span>
+                  </span>
+                  <span className="lib-add" aria-hidden>{flash === i.key ? <Check size={16} className="draw" /> : <Plus size={16} />}</span>
+                </button>
+              );
+            })}
           </div>
-        ))}
+        )}
       </div>
     </Modal>
   );

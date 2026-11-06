@@ -3,10 +3,10 @@ import { createPortal } from 'react-dom';
 import {
   X, Check, AlertTriangle, Info, AlertCircle, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown, Loader2,
   Phone, Mail, MessageCircle, Users, StickyNote, Paperclip, FileText, Handshake, Flag, History, CheckSquare, Zap,
-  MessagesSquare, Smartphone, AtSign, Inbox as InboxIcon, type LucideIcon,
+  MessagesSquare, Smartphone, AtSign, Inbox as InboxIcon, ChevronDown, Search, type LucideIcon,
 } from 'lucide-react';
 import type { Tone } from '../config/labels';
-import { cx, initials } from '../lib/utils';
+import { cx, initials, normalize } from '../lib/utils';
 import { useUI, dismissToast, ConfirmReq, useFresh } from '../store/ui';
 
 /* ---------- Icons by name (tree-shaken map) ---------- */
@@ -58,12 +58,118 @@ export function Field({ label, required, error, hint, children, className }: { l
 }
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>((p, ref) => <input ref={ref} {...p} className={cx('input', p.className)} />);
 export const Textarea = (p: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...p} className={cx('textarea', p.className)} />;
-export function Select({ options, placeholder, ...p }: React.SelectHTMLAttributes<HTMLSelectElement> & { options: (string | { value: string; label: string })[]; placeholder?: string }) {
+type SelOpt = string | { value: string; label: string };
+type SelectProps = Omit<React.SelectHTMLAttributes<HTMLSelectElement>, 'children' | 'value' | 'onChange' | 'multiple' | 'size'> & {
+  options: SelOpt[]; placeholder?: string; value?: string | number | readonly string[];
+  onChange?: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+};
+
+/** Styled dropdown (replaces the browser's native <select>): glass listbox in a portal, keyboard + type-ahead,
+ * search for long lists, animated enter/exit, follows the trigger on scroll instead of closing. */
+export function Select({ options, placeholder, value, onChange, disabled, className, style, id, ...rest }: SelectProps) {
+  const cur = String(value ?? '');
+  const all = useMemo(() => {
+    const base = options.map(o => (typeof o === 'string' ? { value: o, label: o } : o));
+    return placeholder !== undefined ? [{ value: '', label: placeholder }, ...base] : base;
+  }, [options, placeholder]);
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [active, setActive] = useState(0);
+  const [pos, setPos] = useState<{ left: number; width: number; maxH: number; top?: number; bottom?: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const uid = useId();
+  const searchable = all.length > 8;
+  const shown = useMemo(() => (q ? all.filter(o => normalize(o.label).includes(normalize(q))) : all), [all, q]);
+  const selected = all.find(o => o.value === cur);
+  useExitGhost(pop, open && !!pos);
+
+  const place = () => {
+    const el = btn.current; if (!el) return;
+    const r = el.getBoundingClientRect(); const vh = window.innerHeight;
+    if (r.bottom < 0 || r.top > vh) { setOpen(false); return; } // trigger scrolled out of view
+    const below = vh - r.bottom - 14, above = r.top - 14;
+    const up = below < 210 && above > below;
+    const width = Math.max(r.width, 200);
+    const left = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - width - 8));
+    setPos({ left, width, maxH: Math.max(150, Math.min(340, up ? above : below)), ...(up ? { bottom: vh - r.top + 6 } : { top: r.bottom + 6 }) });
+  };
+  const openIt = () => {
+    if (disabled) return;
+    place(); setQ(''); setActive(Math.max(0, all.findIndex(o => o.value === cur))); setOpen(true);
+  };
+  const close = (refocus = true) => { setOpen(false); setQ(''); if (refocus) btn.current?.focus(); };
+  const pick = (o?: { value: string; label: string }) => {
+    if (!o) return;
+    close();
+    if (o.value !== cur) onChange?.({ target: { value: o.value, name: rest.name }, currentTarget: { value: o.value, name: rest.name } } as unknown as React.ChangeEvent<HTMLSelectElement>);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => { const t = e.target as Node; if (!pop.current?.contains(t) && !btn.current?.contains(t)) close(false); };
+    let raf = 0;
+    const reflow = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(place); };
+    document.addEventListener('mousedown', down);
+    window.addEventListener('scroll', reflow, true); window.addEventListener('resize', reflow);
+    if (searchable) requestAnimationFrame(() => search.current?.focus({ preventScroll: true }));
+    return () => { document.removeEventListener('mousedown', down); window.removeEventListener('scroll', reflow, true); window.removeEventListener('resize', reflow); cancelAnimationFrame(raf); };
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) list.current?.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: 'nearest' }); }, [active, open]);
+
+  const move = (d: number) => setActive(a => { const n = shown.length; return n ? (a + d + n) % n : 0; });
+  const onKey = (e: React.KeyboardEvent) => {
+    if (disabled) return;
+    if (!open) { if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) { e.preventDefault(); openIt(); } return; }
+    switch (e.key) {
+      case 'ArrowDown': e.preventDefault(); move(1); break;
+      case 'ArrowUp': e.preventDefault(); move(-1); break;
+      case 'Home': e.preventDefault(); setActive(0); break;
+      case 'End': e.preventDefault(); setActive(Math.max(0, shown.length - 1)); break;
+      case 'Enter': e.preventDefault(); pick(shown[active]); break;
+      case ' ': if (e.target === btn.current) { e.preventDefault(); pick(shown[active]); } break;
+      case 'Escape': e.preventDefault(); e.stopPropagation(); close(); break; // never bubbles to a parent modal
+      case 'Tab': close(false); break;
+      default:
+        if (!searchable && e.key.length === 1) { // type-ahead
+          const k = normalize(e.key); const n = shown.length;
+          for (let i = 1; i <= n; i++) { const j = (active + i) % n; if (normalize(shown[j].label).startsWith(k)) { setActive(j); break; } }
+        }
+    }
+  };
+
   return (
-    <select {...p} className={cx('select', p.className)}>
-      {placeholder !== undefined && <option value="">{placeholder}</option>}
-      {options.map(o => (typeof o === 'string' ? <option key={o} value={o}>{o}</option> : <option key={o.value} value={o.value}>{o.label}</option>))}
-    </select>
+    <>
+      <button ref={btn} type="button" id={id} role="combobox" aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? `${uid}-lb` : undefined}
+        aria-activedescendant={open ? `${uid}-o${active}` : undefined} disabled={disabled}
+        className={cx('select', 'dd', open && 'open', !selected?.value && 'ph', className)} style={style}
+        {...(rest as unknown as React.ButtonHTMLAttributes<HTMLButtonElement>)}
+        onClick={() => (open ? close() : openIt())} onKeyDown={onKey}>
+        <span className="dd-label">{selected ? selected.label : placeholder ?? '—'}</span>
+        <ChevronDown className="dd-chev" size={15} aria-hidden />
+      </button>
+      {open && pos && createPortal(
+        <div ref={pop} className="dd-pop" style={{ left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxH, transformOrigin: pos.bottom !== undefined ? 'bottom left' : 'top left' }}>
+          {searchable && (
+            <div className="dd-search"><Search size={14} aria-hidden />
+              <input ref={search} type="search" role="searchbox" aria-label="Filtrar opções" placeholder="Buscar…" value={q} autoComplete="off"
+                onChange={e => { setQ(e.target.value); setActive(0); }} onKeyDown={onKey} />
+            </div>
+          )}
+          <div ref={list} id={`${uid}-lb`} role="listbox" aria-label={rest['aria-label']} className="dd-list" onMouseDown={e => e.preventDefault()}>
+            {shown.map((o, i) => (
+              <div key={o.value} id={`${uid}-o${i}`} data-i={i} role="option" aria-selected={o.value === cur}
+                className={cx('dd-opt', i === active && 'active', o.value === cur && 'sel', o.value === '' && 'ph')}
+                onMouseEnter={() => setActive(i)} onClick={() => pick(o)}>
+                <span className="dd-opt-label">{o.label}</span>{o.value === cur && <Check size={15} className="dd-check" aria-hidden />}
+              </div>
+            ))}
+            {!shown.length && <div className="dd-empty">Nada encontrado</div>}
+          </div>
+        </div>, document.body)}
+    </>
   );
 }
 export const Switch = ({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) =>

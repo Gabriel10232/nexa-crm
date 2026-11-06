@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   LayoutGrid, Palette, Plus, Undo2, Redo2, RotateCcw, Save, X, Settings2, Copy, Lock, Unlock, EyeOff, Eye, Trash2,
   Download, ChevronDown, Check, Star, Pencil, Users, ChevronLeft, ChevronRight, Printer, GripVertical,
+  MoreHorizontal, Monitor, Tablet, Smartphone,
 } from 'lucide-react';
 import type { DashboardLayout, RoleKey, TenantData, Widget } from '../../types';
 import { useTenant } from '../../store/store';
@@ -39,7 +40,7 @@ export default function Dashboard() {
   const { user, can } = useSession();
   const admin = ['owner', 'admin', 'manager'].includes(user.role);
   const loading = useLoading(420);
-  const cols = useCols();
+  const autoCols = useCols();
 
   /* ---------- Layout selection (per user) ---------- */
   const visible = live.dashboards.filter(l => admin || l.ownerId === user.id || (l.roles.includes(user.role) && (l.shared || !l.ownerId)));
@@ -65,7 +66,16 @@ export default function Dashboard() {
   const [adding, setAdding] = useState(false);
   const [layoutModal, setLayoutModal] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
+  const [deviceView, setDeviceView] = useState<'auto' | 'desktop' | 'tablet' | 'mobile'>('auto');
+  const [resizeId, setResizeId] = useState<string | null>(null);
+  const draftRef = useRef<Widget[]>([]); draftRef.current = draft;
+  const dragIdRef = useRef<string | null>(null);
+  const dragSnap = useRef<Widget[] | null>(null);
+  const lastSwap = useRef(0);
+  // While editing, the layout can be previewed as desktop / tablet / phone regardless of the real window size.
+  const cols = editing && deviceView !== 'auto' ? { desktop: 12, tablet: 6, mobile: 1 }[deviceView] : autoCols;
+  const devKey: 'desktop' | 'tablet' | 'mobile' = cols === 12 ? 'desktop' : cols === 6 ? 'tablet' : 'mobile';
+  const devLabel = { desktop: 'desktop', tablet: 'tablet', mobile: 'celular' }[devKey];
   const [, force] = useState(0);
   const widgets = editing ? draft : layout?.widgets ?? [];
   const dirty = editing && layout && JSON.stringify(draft) !== JSON.stringify(layout.widgets);
@@ -129,6 +139,29 @@ export default function Dashboard() {
     toast('info', `"${w.title}" removido`, undefined, { label: 'Desfazer', run: undo });
   };
 
+  /* ---------- Drag & drop with a live preview ---------- */
+  // One undo step per drag. While dragging over another widget the order updates immediately (neighbours glide via FLIP),
+  // so the user sees the final layout before dropping. A short cooldown avoids flicker when the layout shifts under the cursor.
+  const startDrag = (w: Widget, e: React.DragEvent) => {
+    if (resizing.current) { e.preventDefault(); return; }
+    dragIdRef.current = w.id; dragSnap.current = draftRef.current; lastSwap.current = 0;
+    hist.current.past.push(draftRef.current); hist.current.future = [];
+    setDragId(w.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', w.id);
+  };
+  const swapOver = (targetId: string) => {
+    const from = dragIdRef.current; if (!from || from === targetId || Date.now() - lastSwap.current < 200) return;
+    const cur = draftRef.current; const i = cur.findIndex(x => x.id === from), j = cur.findIndex(x => x.id === targetId);
+    if (i < 0 || j < 0 || cur[j].locked) return;
+    lastSwap.current = Date.now();
+    setDraft(c => { const n = [...c]; const [it] = n.splice(i, 1); n.splice(j, 0, it); return n; });
+  };
+  const endDrag = () => {
+    const snap = dragSnap.current; const cur = draftRef.current;
+    const unchanged = !!snap && snap.length === cur.length && snap.every((x, i) => x === cur[i]);
+    if (unchanged) hist.current.past.pop(); else if (autosave) commitLayout(cur, true);
+    dragIdRef.current = null; dragSnap.current = null; setDragId(null); force(x => x + 1);
+  };
+
   /* ---------- Resize by pointer ---------- */
   const gridRef = useRef<HTMLDivElement>(null);
   const resizing = useRef(false);
@@ -151,7 +184,7 @@ export default function Dashboard() {
   }, [layoutSig]); // eslint-disable-line react-hooks/exhaustive-deps
   const resizeStart = (e: React.PointerEvent, w: Widget, axis: 'x' | 'y' | 'xy') => {
     e.preventDefault(); e.stopPropagation();
-    resizing.current = true;
+    resizing.current = true; setResizeId(w.id);
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     const grid = gridRef.current!; const gap = parseFloat(getComputedStyle(grid).columnGap) || 16;
     const colW = (grid.clientWidth + gap) / cols; const rowH = (parseFloat(getComputedStyle(grid).gridAutoRows) || 92) + gap;
@@ -169,7 +202,7 @@ export default function Dashboard() {
       setDraft(cur => cur.map(x => (x.id === w.id ? { ...x, w: nw, h: nh } : x)));
     };
     const onMove = (ev: PointerEvent) => { px = ev.clientX; py = ev.clientY; if (!frame) frame = requestAnimationFrame(apply); };
-    const onUp = () => { if (frame) { cancelAnimationFrame(frame); apply(); } resizing.current = false; window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); setDraft(cur => { if (autosave) commitLayout(cur, true); return cur; }); force(x => x + 1); };
+    const onUp = () => { if (frame) { cancelAnimationFrame(frame); apply(); } resizing.current = false; setResizeId(null); window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); setDraft(cur => { if (autosave) commitLayout(cur, true); return cur; }); force(x => x + 1); };
     window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp);
   };
 
@@ -238,10 +271,20 @@ export default function Dashboard() {
 
       {editing && (
         <div className="editbar glass no-print" role="toolbar" aria-label="Edição do dashboard">
-          <strong className="small">Modo de edição</strong>
-          <span className="xs muted hide-sm">Arraste para mover · bordas para redimensionar</span>
+          <div className="editbar-title"><span className="edit-dot" aria-hidden />
+            <div style={{ minWidth: 0 }}>
+              <strong className="small ellipsis" style={{ display: 'block' }}>Editando "{layout.name}"</strong>
+              <span className="xs muted hide-sm">Arraste pela alça · puxe as bordas para redimensionar · use os três pontos para mais opções</span>
+            </div>
+          </div>
           <span className="flex1" />
-          {dirty && !autosave && <span className="unsaved">Não salvo</span>}
+          <Seg label="Pré-visualizar em" value={deviceView} onChange={setDeviceView} options={[
+            { value: 'auto', label: 'Auto' },
+            { value: 'desktop', label: <span className="sr-only">Desktop</span>, icon: <Monitor /> },
+            { value: 'tablet', label: <span className="sr-only">Tablet</span>, icon: <Tablet /> },
+            { value: 'mobile', label: <span className="sr-only">Celular</span>, icon: <Smartphone /> },
+          ]} />
+          {autosave ? <span className="edit-status ok">Salvamento automático</span> : dirty ? <span className="unsaved">Não salvo</span> : <span className="edit-status">Sem alterações</span>}
           <Button size="sm" onClick={() => setAdding(true)}><Plus />Widget</Button>
           <Button size="sm" icon onClick={undo} disabled={!hist.current.past.length} aria-label="Desfazer (Ctrl+Z)" title="Desfazer"><Undo2 /></Button>
           <Button size="sm" icon onClick={redo} disabled={!hist.current.future.length} aria-label="Refazer (Ctrl+Y)" title="Refazer"><Redo2 /></Button>
@@ -258,20 +301,22 @@ export default function Dashboard() {
         <div className="card"><div className="empty"><div className="empty-icon"><LayoutGrid /></div><h3>Dashboard vazio</h3><p>Adicione indicadores, gráficos e listas para montar seu workspace.</p>
           <Button variant="primary" onClick={() => { if (!editing) startEdit(); setAdding(true); }}><Plus />Adicionar widget</Button></div></div>
       ) : (
-        <div ref={gridRef} className={cx('dash-grid', editing && 'editing')}>
+        <div ref={gridRef} data-cols={cols} className={cx('dash-grid', editing && 'editing', editing && deviceView !== 'auto' && 'previewing', resizeId && 'resizing')}
+          onDragOver={e => { if (dragIdRef.current) e.preventDefault(); }}>
           {shown.map((w, idx) => {
             const span = spanFor(w.w, cols);
             const hiddenAll = !w.visible.desktop && !w.visible.tablet && !w.visible.mobile;
+            const hiddenHere = editing && !w.visible[devKey];
             return (
               <section key={w.id} aria-label={w.title} data-wid={w.id}
-                className={cx('card widget', w.type === 'section' && 'section', w.type === 'kpi' && 'kpi-w', w.locked && 'locked', dragId === w.id && 'dragging', overId === w.id && dragId !== w.id && 'drop-target',
+                className={cx('card widget', w.type === 'section' && 'section', w.type === 'kpi' && 'kpi-w', w.locked && 'locked', dragId === w.id && 'dragging',
                   !editing && !w.visible.desktop && 'hide-desktop', !editing && !w.visible.tablet && 'hide-tablet', !editing && !w.visible.mobile && 'hide-mobile')}
-                style={{ gridColumn: cols === 1 ? undefined : `span ${span}`, gridRow: cols === 1 ? undefined : `span ${w.h}`, '--h': w.h, '--i': Math.min(idx, 14), opacity: editing && hiddenAll ? .45 : undefined } as React.CSSProperties}
+                style={{ gridColumn: cols === 1 ? undefined : `span ${span}`, gridRow: cols === 1 ? undefined : `span ${w.h}`, '--h': w.h, '--i': Math.min(idx, 14), opacity: hiddenHere ? .45 : undefined } as React.CSSProperties}
                 draggable={editing && !w.locked}
-                onDragStart={e => { if (resizing.current || (e.target as HTMLElement).closest?.('.resize-e,.resize-s,.resize-se,.w-tools')) { e.preventDefault(); return; } setDragId(w.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', w.id); }}
-                onDragEnd={() => { setDragId(null); setOverId(null); }}
-                onDragOver={e => { if (!editing || !dragId || w.locked) return; e.preventDefault(); setOverId(w.id); }}
-                onDrop={e => { e.preventDefault(); if (dragId && dragId !== w.id && !w.locked) reorder(dragId, w.id); setDragId(null); setOverId(null); }}>
+                onDragStart={e => startDrag(w, e)}
+                onDragEnd={endDrag}
+                onDragOver={e => { if (!editing || !dragIdRef.current) return; e.preventDefault(); swapOver(w.id); }}
+                onDrop={e => e.preventDefault()}>
                 {w.type === 'section' ? (
                   <div><h2 style={{ fontSize: 17 }}>{w.title}</h2>{w.description && <p className="muted small">{w.description}</p>}</div>
                 ) : (<>
@@ -279,17 +324,32 @@ export default function Dashboard() {
                   <div className="w-body"><WidgetBody w={w} ctx={ctx} /></div>
                 </>)}
                 {editing && <>
-                  <div className="w-tools no-print" onMouseDown={e => e.stopPropagation()}>
-                    {!w.locked && <span className="btn ghost xs icon" style={{ cursor: 'grab' }} aria-hidden title="Arrastar"><GripVertical /></span>}
-                    <Button size="xs" variant="ghost" icon onClick={() => move(w.id, -1)} disabled={idx === 0 || w.locked} aria-label="Mover para trás"><ChevronLeft /></Button>
-                    <Button size="xs" variant="ghost" icon onClick={() => move(w.id, 1)} disabled={idx === shown.length - 1 || w.locked} aria-label="Mover para frente"><ChevronRight /></Button>
+                  <div className="w-tools no-print">
+                    {w.locked ? <span className="w-grip lock" title="Widget bloqueado"><Lock size={13} /></span> : <span className="w-grip" title="Arraste para mover" aria-hidden><GripVertical size={15} /></span>}
+                    <span className="w-dim" title="Largura × altura (colunas × linhas)">{w.w}×{w.h}</span>
                     <Button size="xs" variant="ghost" icon onClick={() => setConfigW(w)} aria-label={`Configurar ${w.title}`} title="Configurar"><Settings2 /></Button>
-                    <Button size="xs" variant="ghost" icon onClick={() => change(ws => { const i = ws.findIndex(x => x.id === w.id); ws.splice(i + 1, 0, { ...deepClone(w), id: uid('w'), title: `${w.title} (cópia)`, required: false }); return ws; })} aria-label="Duplicar" title="Duplicar"><Copy /></Button>
-                    <Button size="xs" variant="ghost" icon onClick={() => patchW(w.id, { locked: !w.locked })} aria-label={w.locked ? 'Desbloquear' : 'Bloquear'} title={w.locked ? 'Desbloquear' : 'Bloquear'}>{w.locked ? <Unlock /> : <Lock />}</Button>
-                    <Button size="xs" variant="ghost" icon onClick={() => patchW(w.id, { visible: hiddenAll ? { desktop: true, tablet: true, mobile: true } : { desktop: false, tablet: false, mobile: false } })} aria-label={hiddenAll ? 'Reexibir' : 'Ocultar'} title={hiddenAll ? 'Reexibir' : 'Ocultar'}>{hiddenAll ? <Eye /> : <EyeOff />}</Button>
-                    <Button size="xs" variant="ghost" icon onClick={() => remove(w)} aria-label="Remover" title={w.required ? 'Obrigatório' : 'Remover'} disabled={w.required && !admin}><Trash2 /></Button>
+                    <Menu width={244} trigger={t => <Button size="xs" variant="ghost" icon {...t} aria-label="Mais ações" title="Mais ações"><MoreHorizontal /></Button>}>
+                      <div className="menu-label">Largura</div>
+                      <div className="menu-sizes">
+                        {([[3, 'Quarto'], [4, 'Terço'], [6, 'Metade'], [8, 'Dois terços'], [12, 'Largura total']] as const).map(([n, l]) => (
+                          <button key={n} data-keep aria-pressed={w.w === n} className={n === 12 ? 'wide' : undefined} disabled={w.locked} onClick={() => patchW(w.id, { w: n })}>{l}</button>
+                        ))}
+                      </div>
+                      <div className="menu-label">Altura</div>
+                      <div className="menu-sizes five">
+                        {[1, 2, 3, 4, 5].map(n => <button key={n} data-keep aria-pressed={w.h === n} disabled={w.locked} onClick={() => patchW(w.id, { h: n })} aria-label={`Altura ${n} linha${n > 1 ? 's' : ''}`}>{n}</button>)}
+                      </div>
+                      <hr />
+                      <button onClick={() => move(w.id, -1)} disabled={idx === 0 || w.locked}><ChevronLeft />Mover para trás</button>
+                      <button onClick={() => move(w.id, 1)} disabled={idx === shown.length - 1 || w.locked}><ChevronRight />Mover para frente</button>
+                      <button onClick={() => change(ws => { const i = ws.findIndex(x => x.id === w.id); ws.splice(i + 1, 0, { ...deepClone(w), id: uid('w'), title: `${w.title} (cópia)`, required: false }); return ws; })}><Copy />Duplicar</button>
+                      <button onClick={() => patchW(w.id, { locked: !w.locked })}>{w.locked ? <Unlock /> : <Lock />}{w.locked ? 'Desbloquear' : 'Bloquear'}</button>
+                      <button onClick={() => patchW(w.id, { visible: { ...w.visible, [devKey]: !w.visible[devKey] } })}>{w.visible[devKey] ? <Eye /> : <EyeOff />}Visível no {devLabel}</button>
+                      <hr />
+                      <button className="danger" onClick={() => remove(w)} disabled={w.required && !admin} title={w.required ? 'Obrigatório para a equipe' : undefined}><Trash2 />Remover</button>
+                    </Menu>
                   </div>
-                  <span className="w-size">{w.w}×{w.h}{w.required ? ' · obrigatório' : ''}{hiddenAll ? ' · oculto' : ''}</span>
+                  {resizeId === w.id && <span className="w-resize-chip" aria-hidden>{w.w} × {w.h}</span>}
                   {!w.locked && cols > 1 && <>
                     <span className="resize-e" onPointerDown={e => resizeStart(e, w, 'x')} aria-hidden />
                     <span className="resize-s" onPointerDown={e => resizeStart(e, w, 'y')} aria-hidden />
@@ -303,7 +363,7 @@ export default function Dashboard() {
       )}
 
       {configW && <WidgetConfigModal w={configW} admin={admin} onClose={() => setConfigW(null)} onSave={nw => { patchW(nw.id, nw); setConfigW(null); }} />}
-      {adding && <AddWidgetModal onClose={() => setAdding(false)} onAdd={w => { change(ws => [...ws, w]); setAdding(false); toast('success', `"${w.title}" adicionado`, 'Arraste para posicionar.'); setTimeout(() => document.querySelector('.dash-grid > :last-child')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60); }} />}
+      {adding && <AddWidgetModal existing={draft} onClose={() => setAdding(false)} onAdd={w => { change(ws => [...ws, w]); }} />}
       {layoutModal && <LayoutSettings layout={layout} onClose={() => setLayoutModal(false)} />}
     </div>
   );
